@@ -42,11 +42,11 @@ PlaintextTokenGenerator::PlaintextTokenGenerator(absl::string_view hmac_key) {
 
 absl::Status PlaintextTokenGenerator::Generate(
     const std::array<uint8_t, token_structure.signal_size>& signal,
-    int bucket_id,
+    int ordinal,
     PlaintextTokenBytes& message) {
   message.fill(0);
   message[0] = token_structure.version_value;
-  message[token_structure.bucket_offset] = bucket_id;
+  message[token_structure.ordinal_offset] = ordinal;
   for (size_t i = 0; i < token_structure.signal_size; ++i) {
     message[token_structure.signal_offset + i] = signal[i];
   }
@@ -81,7 +81,7 @@ absl::StatusOr<proto::PlaintextToken> PlaintextTokenValidator::ToProto(
                      token_structure.signal_size);
   proto::PlaintextToken plaintext;
   plaintext.set_version(message[0]);
-  plaintext.set_bucket(message[token_structure.bucket_offset]);
+  plaintext.set_ordinal(message[token_structure.ordinal_offset]);
   // Explicit cast from a string_view to a string for compiler compatibility.
   plaintext.set_signal(std::string(signal_str));
   ASSIGN_OR_RETURN(const bool hmac_valid, IsHMACValid(message));
@@ -103,6 +103,15 @@ absl::StatusOr<bool> PlaintextTokenValidator::IsHMACValid(
   ASSIGN_OR_RETURN(computed_hmac, HMAC_SHA256(hmac_key_, message_hmac));
   return observed_hmac_str == computed_hmac.substr(
       0, token_structure.hmac_size);
+}
+
+bool IsTokenSignalEmpty(const proto::PlaintextToken& token) {
+  for (const uint8_t byte : token.signal()) {
+    if (byte != 0) {
+      return false;
+    }
+  }
+  return true;
 }
 
 absl::StatusOr<std::string> HMAC_SHA256(

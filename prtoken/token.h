@@ -39,23 +39,23 @@ namespace prtoken {
 struct VersionedTokenStructure {
   size_t version_value;
   size_t version_size;
-  size_t bucket_offset;
-  size_t bucket_size;
+  size_t ordinal_offset;
+  size_t ordinal_size;
   size_t signal_offset;
   size_t signal_size;
   size_t hmac_offset;
   size_t hmac_size;
   size_t padding_size;
   constexpr size_t token_size() const {
-    return version_size + bucket_size + signal_size + hmac_size + padding_size;
+    return version_size + ordinal_size + signal_size + hmac_size + padding_size;
   };
 };
 
 constexpr VersionedTokenStructure token_structure_v1 = {
     .version_value = 1,
     .version_size = 1,
-    .bucket_offset = 1,
-    .bucket_size = 1,
+    .ordinal_offset = 1,
+    .ordinal_size = 1,
     .signal_offset = 2,
     .signal_size = 16,
     .hmac_offset = 18,
@@ -66,17 +66,9 @@ constexpr VersionedTokenStructure token_structure_v1 = {
 constexpr VersionedTokenStructure token_structure = token_structure_v1;
 using PlaintextTokenBytes = std::array<uint8_t, token_structure.token_size()>;
 
-// The # of buckets we can choose for a token. Note that this number must fit
-// into the bucket_size parameter for the token.
-static const size_t kTokenBucketsCount = 100;
 static constexpr int kCurveId = NID_X9_62_prime256v1;  // aka secp256r1
 static const uint8_t kBitsPerByte = 8;
 static const uint8_t kHMACSecretSizeBytes = 32;
-
-struct ElGamalProtoKeypair {
-  private_join_and_compute::ElGamalPublicKey public_key;
-  private_join_and_compute::ElGamalSecretKey secret_key;
-};
 
 // Generates the plaintext of a probabilistic reveal token.
 class PlaintextTokenGenerator {
@@ -85,12 +77,12 @@ class PlaintextTokenGenerator {
   // Build the plaintext of a probabilistic reveal token for a given signal.
   virtual absl::Status Generate(
       const std::array<uint8_t, token_structure.signal_size>& signal,
-      int bucket_id,
+      int ordinal_id,
       PlaintextTokenBytes& message);
   virtual ~PlaintextTokenGenerator() = default;
 
  private:
-  // Bit generator for uniformly random bucket assignment.
+  // Bit generator for uniformly random ordinal assignment.
   std::unique_ptr<absl::BitGen> gen_;
   std::string hmac_key_;
 };
@@ -106,6 +98,8 @@ class PlaintextTokenValidator {
   absl::StatusOr<bool> IsHMACValid(absl::string_view message);
   std::string hmac_key_;
 };
+
+bool IsTokenSignalEmpty(const proto::PlaintextToken& token);
 
 absl::StatusOr<std::string> HMAC_SHA256(
     absl::string_view key,

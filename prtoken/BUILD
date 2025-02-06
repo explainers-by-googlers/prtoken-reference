@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@com_github_grpc_grpc//bazel:grpc_build_system.bzl", "grpc_proto_library")
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -22,15 +22,14 @@ cc_library(
     srcs = ["token.cc"],
     hdrs = ["token.h"],
     deps = [
-        ":token_cc_proto",
+        ":token_proto",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/random",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings:string_view",
         "@boringssl//:crypto",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/random",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
         "@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto",
         "@private_join_and_compute//private_join_and_compute/util:status_includes",
     ],
@@ -42,13 +41,12 @@ cc_library(
     hdrs = ["issuer.h"],
     deps = [
         ":token",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings:string_view",
         "@boringssl//:crypto",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/random",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:string_view",
         "@private_join_and_compute//private_join_and_compute/crypto:bn_util",
         "@private_join_and_compute//private_join_and_compute/crypto:ec_util",
         "@private_join_and_compute//private_join_and_compute/crypto:elgamal",
@@ -64,8 +62,8 @@ cc_library(
     hdrs = ["client.h"],
     deps = [
         ":token",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
         "@private_join_and_compute//private_join_and_compute/crypto:bn_util",
         "@private_join_and_compute//private_join_and_compute/crypto:ec_util",
         "@private_join_and_compute//private_join_and_compute/crypto:elgamal",
@@ -80,13 +78,14 @@ cc_library(
     hdrs = ["verifier.h"],
     deps = [
         ":token",
-        ":token_cc_proto",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
+        ":token_proto",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/strings:string_view",
+        "@abseil-cpp//absl/types:span",
         "@private_join_and_compute//private_join_and_compute/crypto:bn_util",
         "@private_join_and_compute//private_join_and_compute/crypto:ec_util",
         "@private_join_and_compute//private_join_and_compute/crypto:elgamal",
@@ -95,12 +94,8 @@ cc_library(
     ],
 )
 
-proto_library(
+grpc_proto_library(
     name = "token_proto",
     srcs = ["token.proto"],
-)
-
-cc_proto_library(
-    name = "token_cc_proto",
-    deps = [":token_proto"],
+    deps = ["@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto"],
 )

@@ -14,13 +14,14 @@
 
 #include "prtoken/issuer.h"
 
+#include <sys/types.h>
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -43,18 +44,18 @@ namespace prtoken {
 using ::private_join_and_compute::Context;
 using ::private_join_and_compute::ECGroup;
 using ::private_join_and_compute::ECPoint;
-using ::private_join_and_compute::ElGamalPublicKey;
 using ::private_join_and_compute::ElGamalCiphertext;
 using ::private_join_and_compute::ElGamalEncrypter;
+using ::private_join_and_compute::ElGamalPublicKey;
+using ::private_join_and_compute::elgamal::Ciphertext;
 using ::private_join_and_compute::elgamal::GenerateKeyPair;
 using ::private_join_and_compute::elgamal::PublicKey;
-using ::private_join_and_compute::elgamal::Ciphertext;
 
 absl::Status ShuffleVector(std::vector<private_join_and_compute::ElGamalCiphertext>& tokens) {
   uint32_t randomValue;
   for (size_t i = tokens.size() - 1; i > 0; --i) {
     if (RAND_bytes(reinterpret_cast<unsigned char*>(&randomValue),
-                  sizeof(randomValue)) != 1) {
+                   sizeof(randomValue)) != 1) {
       return absl::InternalError("Failed to generate random value");
     }
     size_t j = randomValue % (i + 1);
@@ -65,8 +66,8 @@ absl::Status ShuffleVector(std::vector<private_join_and_compute::ElGamalCipherte
 
 absl::Status Encrypter::Init(const ElGamalPublicKey& public_key) {
   blinders_context_ = std::make_unique<Context>();
-  ASSIGN_OR_RETURN(ECGroup ec_group, ECGroup::Create(kCurveId,
-                                                     blinders_context_.get()));
+  ASSIGN_OR_RETURN(ECGroup ec_group,
+                   ECGroup::Create(kCurveId, blinders_context_.get()));
   ec_group_ = std::make_unique<private_join_and_compute::ECGroup>(std::move(ec_group));
   ASSIGN_OR_RETURN(ECPoint point_g, ec_group_->CreateECPoint(public_key.g()));
   ASSIGN_OR_RETURN(ECPoint point_y, ec_group_->CreateECPoint(public_key.y()));
@@ -94,30 +95,30 @@ absl::StatusOr<ElGamalCiphertext> Encrypter::Encrypt(
   return ciphertext_proto;
 }
 
-Issuer::Issuer(float signal_reveal_probability,
-               std::unique_ptr<Encrypter> encrypter,
+Issuer::Issuer(std::unique_ptr<Encrypter> encrypter,
                std::unique_ptr<PlaintextTokenGenerator> generator)
-    : generator_(std::move(generator)),
-      encrypter_(std::move(encrypter)),
-      signal_reveal_probability_(signal_reveal_probability)
-      {
+    : generator_(std::move(generator)), encrypter_(std::move(encrypter)) {
   null_signal_.fill(0);
 };
 
 absl::Status Issuer::IssueTokens(
     const std::array<uint8_t, token_structure.signal_size>& signal,
-    const uint64_t num_tokens,
+    uint64_t num_signal_tokens, uint64_t num_total_tokens,
     std::vector<private_join_and_compute::ElGamalCiphertext>& tokens) {
-  uint64_t num_signal_tokens = num_tokens * signal_reveal_probability_;
-  for (uint64_t i = 0; i < num_tokens; ++i) {
+  if (num_signal_tokens > num_total_tokens) {
+    return absl::InvalidArgumentError(
+        "Number of signal tokens cannot be greater than the total number of "
+        "tokens.");
+  }
+  for (uint64_t i = 0; i < num_total_tokens; ++i) {
     PlaintextTokenBytes message;
     if (i < num_signal_tokens) {
       RETURN_IF_ERROR(generator_->Generate(signal, i + 1, message));
     } else {
       RETURN_IF_ERROR(generator_->Generate(null_signal_, i + 1, message));
     }
-    std::string_view message_str(reinterpret_cast<char*>(message.data()),
-                                 token_structure.token_size());
+    absl::string_view message_str(reinterpret_cast<char*>(message.data()),
+                                  token_structure.token_size());
     ASSIGN_OR_RETURN(ElGamalCiphertext ciphertext_proto,
                      encrypter_->Encrypt(message_str));
     tokens.push_back(ciphertext_proto);
@@ -127,14 +128,12 @@ absl::Status Issuer::IssueTokens(
 }
 
 absl::StatusOr<std::unique_ptr<Issuer>> Issuer::Create(
-    float signal_reveal_probability, absl::string_view hmac_key,
-    const private_join_and_compute::ElGamalPublicKey& public_key) {
+    absl::string_view hmac_key, const private_join_and_compute::ElGamalPublicKey& public_key) {
   auto encrypter = std::make_unique<Encrypter>();
   RETURN_IF_ERROR(encrypter->Init(public_key));
   auto generator = std::make_unique<PlaintextTokenGenerator>(hmac_key);
   return std::unique_ptr<Issuer>(
-      new Issuer(signal_reveal_probability, std::move(encrypter),
-                 std::move(generator)));
+      new Issuer(std::move(encrypter), std::move(generator)));
 }
 
 std::string GenerateSecretKeyHMAC() {
@@ -142,19 +141,20 @@ std::string GenerateSecretKeyHMAC() {
   return context->GenerateRandomBytes(kHMACSecretSizeBytes);
 }
 
-absl::StatusOr<ElGamalProtoKeypair> GenerateElGamalKeypair() {
-  ElGamalProtoKeypair proto_key_pair;
+absl::StatusOr<proto::ElGamalKeyMaterial> GenerateElGamalKeypair() {
+  proto::ElGamalKeyMaterial proto_key_pair;
   auto context = std::make_unique<private_join_and_compute::Context>();
   ASSIGN_OR_RETURN(const ECGroup ec_group,
                    ECGroup::Create(kCurveId, context.get()));
   ASSIGN_OR_RETURN(const KeySet key_pair, GenerateKeyPair(ec_group));
   ASSIGN_OR_RETURN(const std::string g_bytes,
-                   key_pair.first->g.ToBytesCompressed());
+                   key_pair.first->g.ToBytesUnCompressed());
   ASSIGN_OR_RETURN(const std::string y_bytes,
-                   key_pair.first->y.ToBytesCompressed());
-  proto_key_pair.public_key.set_g(g_bytes);
-  proto_key_pair.public_key.set_y(y_bytes);
-  proto_key_pair.secret_key.set_x(key_pair.second->x.ToBytes());
+                   key_pair.first->y.ToBytesUnCompressed());
+  proto_key_pair.mutable_public_key()->mutable_g()->assign(g_bytes);
+  proto_key_pair.mutable_public_key()->mutable_y()->assign(y_bytes);
+  proto_key_pair.mutable_secret_key()->mutable_x()->assign(
+      key_pair.second->x.ToBytes());
   return proto_key_pair;
 }
 

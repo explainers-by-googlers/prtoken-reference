@@ -19,6 +19,9 @@
 
 #include <sys/types.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -34,13 +37,23 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+
 namespace prtoken {
+
+enum VerificationError {
+  VERIFICATION_ERROR_UNKNOWN,
+  VERIFICATION_ERROR_DECRYPT_FAILED,
+  VERIFICATION_ERROR_PARSE_FAILED,
+  VERIFICATION_ERROR_INVALID_HMAC
+};
 
 using ::private_join_and_compute::BigNum;
 using ::private_join_and_compute::Context;
 using ::private_join_and_compute::ElGamalPublicKey;
 using ::private_join_and_compute::ElGamalSecretKey;
 
+using VerificationReport = std::vector<std::pair<size_t /** index */,
+                                                  VerificationError>>;
 
 // Decrypts a probabilistic reveal token into a plaintext message.
 // Creates and holds its own context and ECGroup, which are NOT thread-safe.
@@ -64,9 +77,19 @@ class Verifier {
       const private_join_and_compute::ElGamalSecretKey& elgamal_secret_key,
       absl::string_view hmac_secret);
 
-  absl::Status DecryptTokens(
-      absl::Span<const private_join_and_compute::ElGamalCiphertext> tokens,
-      std::vector<proto::PlaintextToken>& messages);
+absl::Status DecryptTokens(
+    absl::Span<const private_join_and_compute::ElGamalCiphertext> tokens,
+    std::vector<proto::PlaintextToken>& messages,
+    std::vector<proto::VerificationErrorReport>& reports);
+
+  std::map<uint8_t, size_t> GetOrdinalHistogram(
+      const std::vector<proto::PlaintextToken>& tokens);
+
+  absl::Status VerifyEquivalentOrdinalCounts(
+      const std::vector<proto::PlaintextToken>& tokens);
+
+  absl::Status VerifyRevealRate(absl::Span<const proto::PlaintextToken> tokens,
+                                float p_reveal);
 
  private:
   explicit Verifier(std::unique_ptr<Decrypter> decrypter,
@@ -76,6 +99,7 @@ class Verifier {
   private_join_and_compute::ElGamalSecretKey elgamal_secret_key_;
   std::unique_ptr<PlaintextTokenValidator> validator_;
   std::unique_ptr<Decrypter> decrypter_;
+  constexpr static float kRevealRateTolerance = 0.001;  // 0.1% tolerance.
 };
 }  // namespace prtoken
 

@@ -12,8 +12,8 @@ implementation.
   +   token.{h,cc,proto} - Implementation of the token itself.
   +   issuer.{h,cc} - Token issuance
   +   client.{h,cc} - Re-randomization of ciphertext
-  +   verifier{h, cc} - Token verification on the server
-+   protocol.md - Description of the protocol
+  +   verifier.{h, cc} - Verification of token contents and reveal rate.
++  protocol.md - Description of the protocol
 +  README.md - This file
 
 ## How to compile the protocol source

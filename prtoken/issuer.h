@@ -38,9 +38,9 @@
 namespace prtoken {
 
 using KeySet = std::pair<std::unique_ptr<private_join_and_compute::elgamal::PublicKey>,
-                  std::unique_ptr<private_join_and_compute::elgamal::PrivateKey>>;
+                         std::unique_ptr<private_join_and_compute::elgamal::PrivateKey>>;
 
-absl::StatusOr<ElGamalProtoKeypair> GenerateElGamalKeypair();
+absl::StatusOr<proto::ElGamalKeyMaterial> GenerateElGamalKeypair();
 
 // Convenience function to generate a secret key for HMAC.
 std::string GenerateSecretKeyHMAC();
@@ -68,30 +68,23 @@ class Encrypter {
 // Issues PRTs using a PlaintextTokenGenerator and Encrypter.
 class Issuer {
  public:
-  // Create an issuer with a given probability of including the signal in
-  // the token.
+  // Create an issuer with a given number of tokens that can reveal the signal
+  // per batch.
   static absl::StatusOr<std::unique_ptr<Issuer>> Create(
-      float signal_reveal_probability, absl::string_view hmac_key,
-      const private_join_and_compute::ElGamalPublicKey& public_key);
+      absl::string_view hmac_key, const private_join_and_compute::ElGamalPublicKey& public_key);
   virtual ~Issuer() = default;
 
-  // Generate `num_tokens` tokens for the given signal and append these to
+  // Generate `num_total_tokens` tokens for the given signal and append these to
   // the `tokens` vector.
   absl::Status IssueTokens(
       const std::array<uint8_t, token_structure.signal_size>& signal,
-      uint64_t num_tokens,
+      uint64_t num_signal_tokens, uint64_t num_total_tokens,
       std::vector<private_join_and_compute::ElGamalCiphertext>& tokens);
 
  protected:
-  // Update the probability of including the signal in the token.
-  // This function should only be called in tests.
-  void UpdateIPRevealProbability(float signal_reveal_probability) {
-    signal_reveal_probability_ = signal_reveal_probability;
-  }
-
-  // Construct an issuer with a given probability of including the signal
-  // in the token.
-  Issuer(float signal_reveal_probability, std::unique_ptr<Encrypter> encrypter,
+  // Construct an issuer with a given number of tokens that can reveal the
+  // signal.
+  Issuer(std::unique_ptr<Encrypter> encrypter,
          std::unique_ptr<PlaintextTokenGenerator> generator);
 
  private:
@@ -99,7 +92,6 @@ class Issuer {
   std::unique_ptr<PlaintextTokenGenerator> generator_;
   std::unique_ptr<Encrypter> encrypter_;
   std::array<uint8_t, token_structure.signal_size> null_signal_;
-  float signal_reveal_probability_;
 };
 
 }  // namespace prtoken

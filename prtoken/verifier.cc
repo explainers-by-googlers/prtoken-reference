@@ -14,6 +14,10 @@
 
 #include "prtoken/verifier.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -24,9 +28,11 @@
 #include "private_join_and_compute/crypto/ec_point.h"
 #include "private_join_and_compute/crypto/elgamal.h"
 #include "prtoken/token.h"
+#include "prtoken/token.pb.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "private_join_and_compute/util/status_macros.h"
@@ -69,13 +75,99 @@ absl::StatusOr<std::string> Decrypter::Decrypt(
 }
 
 absl::Status Verifier::DecryptTokens(
-    absl::Span<const ElGamalCiphertext> tokens,
-    std::vector<proto::PlaintextToken>& messages) {
-  for (const private_join_and_compute::ElGamalCiphertext& token : tokens) {
-    ASSIGN_OR_RETURN(std::string message, decrypter_->Decrypt(token));
-    ASSIGN_OR_RETURN(proto::PlaintextToken parsed_message,
-                    validator_->ToProto(message));
-    messages.push_back(parsed_message);
+    absl::Span<const private_join_and_compute::ElGamalCiphertext> tokens,
+    std::vector<proto::PlaintextToken>& messages,
+    std::vector<proto::VerificationErrorReport>& reports) {
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    const private_join_and_compute::ElGamalCiphertext& token = tokens[i];
+    absl::StatusOr<std::string> message_or = decrypter_->Decrypt(token);
+    if (!message_or.ok()) {
+      std::string error_message = absl::StrCat(
+          "Failed to decrypt token at index=", i, " with error ",
+          message_or.status().message());
+      LOG(INFO) << error_message;
+      proto::VerificationErrorReport report;
+      report.set_index(i);
+      report.set_error(proto::VERIFICATION_ERROR_DECRYPT_FAILED);
+      report.set_error_message(error_message);
+      reports.push_back(report);
+      continue;
+    }
+    absl::StatusOr<proto::PlaintextToken> parsed_message_or =
+        validator_->ToProto(*message_or);
+    if (!parsed_message_or.ok()) {
+      std::string error_message = absl::StrCat(
+          "Failed to parse token at index=", i, " with error ",
+          parsed_message_or.status().message());
+      LOG(INFO) << error_message;
+      proto::VerificationErrorReport report;
+      report.set_index(i);
+      report.set_error(proto::VERIFICATION_ERROR_PARSE_FAILED);
+      report.set_error_message(error_message);
+      reports.push_back(report);
+      continue;
+    }
+    if (!parsed_message_or->hmac_valid()) {
+      std::string error_message = absl::StrCat(
+          "Token at index=", i, " has invalid HMAC");
+      LOG(INFO) << error_message;
+      proto::VerificationErrorReport report;
+      report.set_index(i);
+      report.set_error(proto::VERIFICATION_ERROR_INVALID_HMAC);
+      report.set_error_message(error_message);
+      reports.push_back(report);
+      continue;
+    }
+    messages.push_back(*parsed_message_or);
+  }
+  if (!reports.empty()) {
+    return absl::InternalError(
+        absl::StrCat(reports.size(), " tokens had errors."));
+  }
+  return absl::OkStatus();
+}
+
+
+std::map<uint8_t, size_t> Verifier::GetOrdinalHistogram(
+    const std::vector<proto::PlaintextToken>& tokens) {
+  std::map<uint8_t, size_t> ordinal_counts;
+  for (const proto::PlaintextToken& token : tokens) {
+    ordinal_counts[token.ordinal()]++;
+  }
+  return ordinal_counts;
+}
+
+absl::Status Verifier::VerifyEquivalentOrdinalCounts(
+    const std::vector<proto::PlaintextToken>& tokens) {
+  // Create a map of ordinals to counts.
+  const std::map<uint8_t, size_t> ordinal_counts = GetOrdinalHistogram(tokens);
+  // Check that the counts are all the same value.
+  for (const auto& [ordinal, count] : ordinal_counts) {
+    if (count != ordinal_counts.begin()->second) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Ordinal ", ordinal, " appears ", count,
+                       " times, but is expected to appear ",
+                       ordinal_counts.begin()->second, " times."));
+    }
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Verifier::VerifyRevealRate(
+    absl::Span<const proto::PlaintextToken> tokens, float p_reveal) {
+  int num_revealed = 0;
+  for (const proto::PlaintextToken& token : tokens) {
+    if (!IsTokenSignalEmpty(token)) {
+      num_revealed++;
+    }
+  }
+  float actual_reveal_rate =
+      static_cast<float>(num_revealed) / tokens.size();
+  if (abs(actual_reveal_rate - p_reveal) > kRevealRateTolerance) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Actual reveal rate ", actual_reveal_rate,
+                     " is not within ", kRevealRateTolerance,
+                     " of the expected reveal rate ", p_reveal));
   }
   return absl::OkStatus();
 }
