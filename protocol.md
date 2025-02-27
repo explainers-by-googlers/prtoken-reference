@@ -159,7 +159,7 @@ only this issuer can mint tokens.
 <table>
   <thead>
     <tr>
-      <th><pre>
+      <th style="text-align: left;"><pre>
 {
   "kty": "EC",
   "crv": "P-256",
@@ -316,7 +316,7 @@ then base64url-encoded into strings. Timestamps are ISO 8601 timestamps UTC.
 <table>
   <thead>
     <tr>
-      <th><pre>
+      <th style="text-align: left;"><pre>
 {
   "epoch_id": 12,
   "epoch_start_time" : "20241125T10:00:00",
