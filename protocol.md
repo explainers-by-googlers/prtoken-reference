@@ -159,14 +159,14 @@ only this issuer can mint tokens.
 <table>
   <thead>
     <tr>
-      <th style="text-align: left;"><pre>
+      <td><pre>
 {
   "kty": "EC",
   "crv": "P-256",
   "x": "DROn9TZojl70_6lhtcLxItT2qskNDGk97wjz0N5qdiE",
   "y": "k6EtdGm_jW3b7Le9zM2LgcO7b9Q_qwjS2jL0MFn6V4",
 }
-</pre></th>
+</pre></td>
     </tr>
   </thead>
   <tbody>
@@ -314,9 +314,9 @@ holding the public key (`pk_e`) and `d` the secret key (`sk_e`). The HMAC secret
 then base64url-encoded into strings. Timestamps are ISO 8601 timestamps UTC.
 
 <table>
-  <thead>
     <tr>
-      <th style="text-align: left;"><pre>
+      <td>
+<pre>
 {
   "epoch_id": 12,
   "epoch_start_time" : "20241125T10:00:00",
@@ -335,9 +335,9 @@ then base64url-encoded into strings. Timestamps are ISO 8601 timestamps UTC.
     "alg": "HS256"
   }
 }
-</pre></th>
+</pre>
+</td>
     </tr>
-  </thead>
   <tbody>
     <tr>
       <td>Figure 2. Secret disclosure from the Issuer</td>
