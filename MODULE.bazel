@@ -9,6 +9,7 @@ bazel_dep(name = "nlohmann_json", version = "3.11.3.bcr.1")
 bazel_dep(name = "grpc", version = "1.66.0.bcr.2", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "abseil-cpp", version = "20240722.0")
 bazel_dep(name = "boringssl", version = "0.20240913.0")
+bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "sqlite3", version = "3.49.1")
 bazel_dep(name = "or-tools", version = "9.12.0")
 
