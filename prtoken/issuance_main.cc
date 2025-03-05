@@ -44,6 +44,13 @@ ABSL_FLAG(std::string, custom_db_filename, "",
           "Append to this file in the output_dir instead of a per-epoch DB.");
 
 namespace {
+
+constexpr int kErrorKeyGeneration = 1;
+constexpr int kErrorSignalParsing = 2;
+constexpr int kErrorTokenIssuance = 3;
+constexpr int kErrorKeyWrite = 4;
+constexpr int kErrorTokenWrite = 5;
+
 // This is an alias to aid readability.
 constexpr size_t SignalSizeLimit =
     prtoken::token_structure.signal_size;
@@ -70,7 +77,7 @@ int main(int argc, char** argv) {
   absl::StatusOr<prtoken::proto::ElGamalKeyMaterial>
       keypair_or = prtoken::GenerateElGamalKeypair();
   if (!keypair_or.ok()) {
-    return 1;
+    return kErrorKeyGeneration;
   }
   const prtoken::proto::ElGamalKeyMaterial& keypair =
       *keypair_or;
@@ -89,14 +96,14 @@ int main(int argc, char** argv) {
   absl::StatusOr<std::array<uint8_t, SignalSizeLimit>> signal_or =
       ParseSignal(signal_b64);
   if (!signal_or.ok()) {
-    return 1;
+    return kErrorSignalParsing;
   }
   std::array<uint8_t, SignalSizeLimit> signal = *signal_or;
   int num_tokens = absl::GetFlag(FLAGS_num_tokens);
   absl::Status status = issuer->IssueTokens(
       signal, static_cast<int>(p_reveal * num_tokens), num_tokens, tokens);
   if (!status.ok()) {
-    return 1;
+    return kErrorTokenIssuance;
   }
 
   const absl::Time epoch_start_time = absl::Now();
@@ -120,13 +127,13 @@ int main(int argc, char** argv) {
   if (!prtoken::WriteKeysToFile(
            keypair, secret_key_hmac, key_file, epoch_start_time, epoch_end_time)
            .ok()) {
-    return 1;
+    return kErrorKeyWrite;
   }
   if (!prtoken::WriteTokensToFile(
            tokens, keypair.public_key(), absl::GetFlag(FLAGS_p_reveal),
            epoch_end_time, tokens_db_file)
            .ok()) {
-    return 2;
+    return kErrorTokenWrite;
   }
   return 0;
 }
