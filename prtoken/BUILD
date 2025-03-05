@@ -99,3 +99,46 @@ grpc_proto_library(
     srcs = ["token.proto"],
     deps = ["@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto"],
 )
+
+cc_binary(
+    name = "issuance_main",
+    srcs = ["issuance_main.cc"],
+    deps = [
+        ":issuer",
+        ":storage",
+        ":token",
+        ":token_proto",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/time",
+        "@or-tools//ortools/base:path",
+    ],
+)
+
+cc_library(
+    name = "storage",
+    srcs = ["storage.cc"],
+    hdrs = ["storage.h"],
+    deps = [
+        ":token",
+        ":token_proto",
+        ":verifier",
+        "@abseil-cpp//absl/cleanup",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/time",
+        "@abseil-cpp//absl/types:span",
+        "@nlohmann_json//:json",
+        "@or-tools//ortools/base:file",
+        "@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto",
+        "@private_join_and_compute//private_join_and_compute/util:status_includes",
+        "@sqlite3",
+    ],
+    copts = ["-std=c++20"],
+)
