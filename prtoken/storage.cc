@@ -346,11 +346,11 @@ absl::Status EpochKeyMaterialStore::LoadFilesMatchingPattern(
 
 absl::StatusOr<EpochKeyMaterials> EpochKeyMaterialStore::GetEpochKeyMaterials(
     uint64_t epoch_id) {
-  if (!epoch_keys_.contains(epoch_id)) {
-    return absl::NotFoundError(absl::StrCat(
-        "Epoch ", epoch_id, " not found"));
+  auto it = epoch_keys_.find(epoch_id);
+  if (it == epoch_keys_.end()) {
+    return absl::NotFoundError(absl::StrCat("Epoch ", epoch_id, " not found"));
   }
-  return epoch_keys_[epoch_id];
+  return it->second;
 }
 
 absl::Status WriteKeysToFile(

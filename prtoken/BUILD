@@ -101,8 +101,8 @@ grpc_proto_library(
 )
 
 cc_binary(
-    name = "issuance_main",
-    srcs = ["issuance_main.cc"],
+    name = "prtoken",
+    srcs = ["main.cc"],
     deps = [
         ":issuer",
         ":storage",
@@ -140,5 +140,4 @@ cc_library(
         "@private_join_and_compute//private_join_and_compute/util:status_includes",
         "@sqlite3",
     ],
-    copts = ["-std=c++20"],
 )
