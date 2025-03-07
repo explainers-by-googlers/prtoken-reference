@@ -21,23 +21,26 @@
 #include <utility>
 #include <vector>
 
-#include "ortools/base/init_google.h"
-#include "ortools/base/path.h"
-#include "prtoken/issuer.h"
-#include "prtoken/storage.h"
-#include "prtoken/token.h"
-#include "prtoken/token.pb.h"
 #include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
+#include "absl/log/initialize.h"
+#include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "ortools/base/path.h"
+#include "prtoken/issuer.h"
+#include "prtoken/storage.h"
+#include "prtoken/token.h"
+#include "prtoken/token.pb.h"
 
 ABSL_FLAG(int, num_tokens, 100, "How many tokens to generate.");
 ABSL_FLAG(float, p_reveal, 0.1, "p_reveal value.");
-ABSL_FLAG(std::string, signal_b64, "", "URI-safe Base64 encoded signal "
+ABSL_FLAG(std::string, signal_b64, "",
+          "URI-safe Base64 encoded signal "
           "(max 128 bits).");
 ABSL_FLAG(std::string, output_dir, "/tmp/", "Where to store output data.");
 ABSL_FLAG(std::string, custom_db_filename, "",
@@ -52,11 +55,10 @@ constexpr int kErrorKeyWrite = 4;
 constexpr int kErrorTokenWrite = 5;
 
 // This is an alias to aid readability.
-constexpr size_t SignalSizeLimit =
-    prtoken::token_structure.signal_size;
+constexpr size_t SignalSizeLimit = prtoken::token_structure.signal_size;
 
 absl::StatusOr<std::array<uint8_t, SignalSizeLimit>> ParseSignal(
-    const std::string& signal_b64) {
+    const std::string &signal_b64) {
   std::array<uint8_t, SignalSizeLimit> signal;
   std::string unescaped_str = "";
   if (!absl::WebSafeBase64Unescape(signal_b64, &unescaped_str)) {
@@ -68,42 +70,39 @@ absl::StatusOr<std::array<uint8_t, SignalSizeLimit>> ParseSignal(
   std::memcpy(signal.data(), unescaped_str.data(), unescaped_str.size());
   return signal;
 }
-}  // namespace
 
-int main(int argc, char** argv) {
-  InitGoogle(argv[0], &argc, &argv, true);
-
+// Function to generate and store tokens
+absl::Status GenerateAndStoreTokens(const std::string &signal_b64,
+                                    int num_tokens, float p_reveal,
+                                    const std::string &output_dir,
+                                    const std::string &custom_db_filename) {
   // Generate secrets and instantiate an issuer.
-  absl::StatusOr<prtoken::proto::ElGamalKeyMaterial>
-      keypair_or = prtoken::GenerateElGamalKeypair();
+  absl::StatusOr<prtoken::proto::ElGamalKeyMaterial> keypair_or =
+      prtoken::GenerateElGamalKeypair();
   if (!keypair_or.ok()) {
-    return kErrorKeyGeneration;
+    return absl::InternalError("Failed to generate ElGamal keypair.");
   }
-  const prtoken::proto::ElGamalKeyMaterial& keypair =
-      *keypair_or;
-  const std::string secret_key_hmac =
-      prtoken::GenerateSecretKeyHMAC();
-  const float p_reveal = absl::GetFlag(FLAGS_p_reveal);
-  absl::StatusOr<std::unique_ptr<prtoken::Issuer>>
-      issuer_status = prtoken::Issuer::Create(
-          secret_key_hmac, keypair.public_key());
-  std::unique_ptr<prtoken::Issuer> issuer(
-      std::move(issuer_status.value()));
+  const prtoken::proto::ElGamalKeyMaterial &keypair = *keypair_or;
+  const std::string secret_key_hmac = prtoken::GenerateSecretKeyHMAC();
+  absl::StatusOr<std::unique_ptr<prtoken::Issuer>> issuer_status =
+      prtoken::Issuer::Create(secret_key_hmac, keypair.public_key());
+  if (!issuer_status.ok()) {
+    return absl::InternalError("Failed to create issuer.");
+  }
+  std::unique_ptr<prtoken::Issuer> issuer(std::move(issuer_status.value()));
 
   // Mint tokens.
   std::vector<private_join_and_compute::ElGamalCiphertext> tokens;
-  std::string signal_b64 = absl::GetFlag(FLAGS_signal_b64);
   absl::StatusOr<std::array<uint8_t, SignalSizeLimit>> signal_or =
       ParseSignal(signal_b64);
   if (!signal_or.ok()) {
-    return kErrorSignalParsing;
+    return signal_or.status();
   }
   std::array<uint8_t, SignalSizeLimit> signal = *signal_or;
-  int num_tokens = absl::GetFlag(FLAGS_num_tokens);
   absl::Status status = issuer->IssueTokens(
       signal, static_cast<int>(p_reveal * num_tokens), num_tokens, tokens);
   if (!status.ok()) {
-    return kErrorTokenIssuance;
+    return absl::InternalError("Failed to issue tokens.");
   }
 
   const absl::Time epoch_start_time = absl::Now();
@@ -112,28 +111,61 @@ int main(int argc, char** argv) {
   std::string epoch_end_time_str =
       absl::FormatTime("%Y%m%d%H%M%S", epoch_end_time, absl::UTCTimeZone());
   const std::string key_file = file::JoinPath(
-      absl::GetFlag(FLAGS_output_dir),
-      absl::StrCat("keys-", epoch_end_time_str, ".json"));
+      output_dir, absl::StrCat("keys-", epoch_end_time_str, ".json"));
   std::string tokens_db_file;
-  if (!absl::GetFlag(FLAGS_custom_db_filename).empty()) {
-    tokens_db_file.assign(
-        file::JoinPath(absl::GetFlag(FLAGS_output_dir),
-                     absl::GetFlag(FLAGS_custom_db_filename)));
+  if (!custom_db_filename.empty()) {
+    tokens_db_file.assign(file::JoinPath(output_dir, custom_db_filename));
   } else {
-    tokens_db_file = absl::StrCat(absl::GetFlag(FLAGS_output_dir), "/tokens-",
-                                  epoch_end_time_str, ".db");
+    tokens_db_file =
+        absl::StrCat(output_dir, "/tokens-", epoch_end_time_str, ".db");
   }
   // Write keys and tokens.
-  if (!prtoken::WriteKeysToFile(
-           keypair, secret_key_hmac, key_file, epoch_start_time, epoch_end_time)
+  if (!prtoken::WriteKeysToFile(keypair, secret_key_hmac, key_file,
+                                epoch_start_time, epoch_end_time)
            .ok()) {
-    return kErrorKeyWrite;
+    return absl::InternalError("Failed to write keys to file.");
   }
-  if (!prtoken::WriteTokensToFile(
-           tokens, keypair.public_key(), absl::GetFlag(FLAGS_p_reveal),
-           epoch_end_time, tokens_db_file)
+  if (!prtoken::WriteTokensToFile(tokens, keypair.public_key(), p_reveal,
+                                  epoch_end_time, tokens_db_file)
            .ok()) {
-    return kErrorTokenWrite;
+    return absl::InternalError("Failed to write tokens to file.");
   }
-  return 0;
+  return absl::OkStatus();
+}
+
+}  // namespace
+
+int main(int argc, char **argv) {
+  absl::InitializeLog();
+
+  // For Positional Arguments.
+  std::vector<char *> pop_args = absl::ParseCommandLine(argc, argv);
+  if (pop_args.size() < 2) {
+    LOG(ERROR) << "Usage: " << argv[0] << " <issue|verify> [options]\n";
+    return 1;
+  }
+
+  std::string command = pop_args[1];
+  std::string signal_b64 = absl::GetFlag(FLAGS_signal_b64);
+  int num_tokens = absl::GetFlag(FLAGS_num_tokens);
+  float p_reveal = absl::GetFlag(FLAGS_p_reveal);
+  std::string output_dir = absl::GetFlag(FLAGS_output_dir);
+  std::string custom_db_filename = absl::GetFlag(FLAGS_custom_db_filename);
+
+  absl::Status status(absl::StatusCode::kInvalidArgument,
+                      "Wrong command-line argument: " + command);
+
+  if (command == "issue") {
+    absl::Status status = GenerateAndStoreTokens(
+        signal_b64, num_tokens, p_reveal, output_dir, custom_db_filename);
+
+    if (status.ok()) return 0;
+    LOG(ERROR) << "Error: " << status.message();
+    return 1;
+  } else if (command == "verify") {
+    // TODO(b/400517728): Add code for token decryption.
+  }
+  LOG(ERROR) << "Usage: prtoken <issue|verify> [options]\n"
+             << "but got: " << command << "\n";
+  return 1;
 }
