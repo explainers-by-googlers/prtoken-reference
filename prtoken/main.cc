@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -39,9 +42,7 @@
 
 ABSL_FLAG(int, num_tokens, 100, "How many tokens to generate.");
 ABSL_FLAG(float, p_reveal, 0.1, "p_reveal value.");
-ABSL_FLAG(std::string, signal_b64, "",
-          "URI-safe Base64 encoded signal "
-          "(max 128 bits).");
+ABSL_FLAG(std::string, ip, "", "IPv4 or v6 address in string");
 ABSL_FLAG(std::string, output_dir, "/tmp/", "Where to store output data.");
 ABSL_FLAG(std::string, custom_db_filename, "",
           "Append to this file in the output_dir instead of a per-epoch DB.");
@@ -57,25 +58,49 @@ constexpr int kErrorTokenWrite = 5;
 // This is an alias to aid readability.
 constexpr size_t SignalSizeLimit = prtoken::token_structure.signal_size;
 
-absl::StatusOr<std::array<uint8_t, SignalSizeLimit>> ParseSignal(
-    const std::string &signal_b64) {
-  std::array<uint8_t, SignalSizeLimit> signal;
-  std::string unescaped_str = "";
-  if (!absl::WebSafeBase64Unescape(signal_b64, &unescaped_str)) {
-    return absl::InternalError("Failed to parse signal.");
+// Helper to check if the input is a valid IP address.
+bool IsValidIPAddress(absl::string_view ip_string) {
+  struct in_addr ip4_addr;
+  struct in6_addr ip6_addr;
+  return (inet_pton(AF_INET, ip_string.data(), &ip4_addr) == 1 ||
+          inet_pton(AF_INET6, ip_string.data(), &ip6_addr) == 1);
+}
+
+// Transform IP string into byte array. V4 address is padded
+// to IPv4-mapped address, see
+// http://tools.ietf.org/html/rfc3493#section-3.7.
+absl::StatusOr<std::array<uint8_t, SignalSizeLimit>> IPStringToByteArray(
+    std::string_view ip_string) {
+  std::array<uint8_t, SignalSizeLimit> ipv6_bytes;
+  struct in6_addr ip6_addr;
+  if (inet_pton(AF_INET6, ip_string.data(), &ip6_addr) == 1) {
+    std::memcpy(ipv6_bytes.data(), &ip6_addr, SignalSizeLimit);
+    return ipv6_bytes;
   }
-  if (unescaped_str.size() > SignalSizeLimit) {
-    return absl::InternalError("Signal is too long.");
+  struct in_addr ipv4_addr;
+  if (inet_pton(AF_INET, ip_string.data(), &ipv4_addr) == 1) {
+    // IPv4-mapped IPv6 format: ::ffff:IPv4
+    // First 10 bytes are 0, next 2 bytes are 0xff, then the IPv4 address.
+    std::memset(ipv6_bytes.data(), 0, 10);
+    ipv6_bytes[10] = 0xff;
+    ipv6_bytes[11] = 0xff;
+    std::memcpy(ipv6_bytes.data() + 12, &ipv4_addr, 4);
+    return ipv6_bytes;
   }
-  std::memcpy(signal.data(), unescaped_str.data(), unescaped_str.size());
-  return signal;
+  return absl::InvalidArgumentError("Invalid IPv4 or IPv6 address.");
 }
 
 // Function to generate and store tokens
-absl::Status GenerateAndStoreTokens(const std::string &signal_b64,
-                                    int num_tokens, float p_reveal,
-                                    const std::string &output_dir,
-                                    const std::string &custom_db_filename) {
+absl::Status GenerateAndStoreTokens() {
+  std::string ip = absl::GetFlag(FLAGS_ip);
+  if (!IsValidIPAddress(ip)) {
+    return absl::InvalidArgumentError("Invalid IP address.");
+  }
+  int num_tokens = absl::GetFlag(FLAGS_num_tokens);
+  float p_reveal = absl::GetFlag(FLAGS_p_reveal);
+  std::string output_dir = absl::GetFlag(FLAGS_output_dir);
+  std::string custom_db_filename = absl::GetFlag(FLAGS_custom_db_filename);
+
   // Generate secrets and instantiate an issuer.
   absl::StatusOr<prtoken::proto::ElGamalKeyMaterial> keypair_or =
       prtoken::GenerateElGamalKeypair();
@@ -94,7 +119,7 @@ absl::Status GenerateAndStoreTokens(const std::string &signal_b64,
   // Mint tokens.
   std::vector<private_join_and_compute::ElGamalCiphertext> tokens;
   absl::StatusOr<std::array<uint8_t, SignalSizeLimit>> signal_or =
-      ParseSignal(signal_b64);
+      IPStringToByteArray(ip);
   if (!signal_or.ok()) {
     return signal_or.status();
   }
@@ -146,24 +171,14 @@ int main(int argc, char **argv) {
   }
 
   std::string command = pop_args[1];
-  std::string signal_b64 = absl::GetFlag(FLAGS_signal_b64);
-  int num_tokens = absl::GetFlag(FLAGS_num_tokens);
-  float p_reveal = absl::GetFlag(FLAGS_p_reveal);
-  std::string output_dir = absl::GetFlag(FLAGS_output_dir);
-  std::string custom_db_filename = absl::GetFlag(FLAGS_custom_db_filename);
-
-  absl::Status status(absl::StatusCode::kInvalidArgument,
-                      "Wrong command-line argument: " + command);
-
   if (command == "issue") {
-    absl::Status status = GenerateAndStoreTokens(
-        signal_b64, num_tokens, p_reveal, output_dir, custom_db_filename);
-
+    absl::Status status = GenerateAndStoreTokens();
     if (status.ok()) return 0;
-    LOG(ERROR) << "Error: " << status.message();
+    LOG(ERROR) << status.message();
     return 1;
   } else if (command == "verify") {
     // TODO(b/400517728): Add code for token decryption.
+    return 0;
   }
   LOG(ERROR) << "Usage: prtoken <issue|verify> [options]\n"
              << "but got: " << command << "\n";
