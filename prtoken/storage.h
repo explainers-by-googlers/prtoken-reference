@@ -27,21 +27,21 @@
 #include <utility>
 #include <vector>
 
-#include "ortools/base/types.h"
-#include "private_join_and_compute/crypto/elgamal.pb.h"
-#include "prtoken/token.pb.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "ortools/base/types.h"
+#include "private_join_and_compute/crypto/elgamal.pb.h"
+#include "prtoken/token.pb.h"
 #include "sqlite3.h"
 
 namespace prtoken {
 
 using private_join_and_compute::ElGamalCiphertext;
-using prtoken::proto::ValidationToken;
 using prtoken::proto::EpochKeyMaterials;
+using prtoken::proto::ValidationToken;
 
 constexpr uint32_t kValidationBucketCount = 10000;
 
@@ -49,27 +49,34 @@ constexpr uint32_t kValidationBucketCount = 10000;
 // of the same p_reveal rate and epoch_id, which we refer to as a validation
 // bucket. We quantize p_reveal to increments of 0.0001, so the bucket is a pair
 // of (p_reveal * 10000, epoch_id).
-using ValidationBucket = std::pair<uint32_t /** p_reveal * 10000 */,
-                                   uint64_t /** epoch_id */>;
+using ValidationBucket =
+    std::pair<uint32_t /** p_reveal * 10000 */, uint64_t /** epoch_id */>;
 
 // Singular Token database file.
 class TokensDB {
  public:
-  absl::Status Open(const std::string& db_path);
-  absl::Status Insert(absl::Span<const ElGamalCiphertext> tokens,
-                      const private_join_and_compute::ElGamalPublicKey& public_key,
-                      float p_reveal, absl::Time expiration_time);
-  absl::Status GetValidationBuckets(std::set<ValidationBucket>& buckets);
+  absl::Status Open(const std::string &db_path);
+  absl::Status Insert(
+      absl::Span<const ElGamalCiphertext> tokens,
+      const private_join_and_compute::ElGamalPublicKey &public_key,
+      float p_reveal, absl::Time expiration_time);
+  absl::Status GetValidationBuckets(std::set<ValidationBucket> &buckets);
+  // Populate a vector of tokens found in rows matching the given public key.
+  absl::Status GetTokens(const std::string &public_key,
+                         const std::string &token_table,
+                         std::vector<ValidationToken> &tokens);
   // Populate a vector of tokens found in rows that match the given bucket.
   absl::Status GetTokensForValidationBucket(
-      const ValidationBucket& bucket,
-      std::vector<ValidationToken>& tokens);
+      const ValidationBucket &bucket, std::vector<ValidationToken> &tokens);
   void close();
   virtual ~TokensDB();
+
  private:
-  sqlite3* db_;
+  absl::Status readTokenFromStatement(sqlite3_stmt *stmt,
+                                      ValidationToken &token);
+  sqlite3 *db_;
   std::string db_path_;
-  constexpr static char kBase64URIEncodedG[] =\
+  constexpr static char kBase64URIEncodedG[] =
       "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFiv"
       "OM1drMV7Oy7ZAaDe_UfU";
 };
@@ -78,11 +85,11 @@ class TokensDB {
 class TokenStore {
  public:
   absl::Status LoadFile(std::string_view file_path);
-  absl::Status LoadFilesMatchingPattern(const std::string& file_pattern);
-  absl::Status GetValidationBuckets(std::set<ValidationBucket>& buckets);
+  absl::Status LoadFilesMatchingPattern(const std::string &file_pattern);
+  absl::Status GetValidationBuckets(std::set<ValidationBucket> &buckets);
   absl::Status GetTokensForValidationBucket(
-      const ValidationBucket& bucket,
-      std::vector<ValidationToken>& tokens);
+      const ValidationBucket &bucket, std::vector<ValidationToken> &tokens);
+
  private:
   std::map<std::string, std::unique_ptr<TokensDB>> tokens_dbs_;
 };
@@ -90,33 +97,34 @@ class TokenStore {
 class EpochKeyMaterialStore {
  public:
   absl::Status LoadFilesMatchingPattern(absl::string_view file_pattern);
-  absl::Status LoadFile(const std::string& file_path);
+  absl::Status LoadFile(const std::string &file_path);
   absl::StatusOr<EpochKeyMaterials> GetEpochKeyMaterials(uint64_t epoch_id);
+
  private:
   std::map<uint64_t, EpochKeyMaterials> epoch_keys_;
 };
 
 // Helper function to write a JSON file containing the given key material.
-absl::Status WriteKeysToFile(
-    const proto::ElGamalKeyMaterial& elgamal_keypair,
-    absl::string_view secret_key_hmac,
-    absl::string_view output_file_name,
-    absl::Time epoch_start,
-    absl::Time epoch_end);
+absl::Status WriteKeysToFile(const proto::ElGamalKeyMaterial &elgamal_keypair,
+                             absl::string_view secret_key_hmac,
+                             absl::string_view output_file_name,
+                             absl::Time epoch_start, absl::Time epoch_end);
 
 absl::StatusOr<EpochKeyMaterials> LoadKeysFromFile(
-    const std::string& file_path);
+    const std::string &file_path);
 
 // Helper function to write a sqlite3 file containing the given tokens.
 absl::Status WriteTokensToFile(
-    const std::vector<ElGamalCiphertext>& tokens,
-    const private_join_and_compute::ElGamalPublicKey& public_key,
-    float p_reveal,
-    absl::Time expiration_time,
+    const std::vector<ElGamalCiphertext> &tokens,
+    const private_join_and_compute::ElGamalPublicKey &public_key,
+    float p_reveal, absl::Time expiration_time,
     absl::string_view output_file_name);
 
-std::string TokenToTLS(const private_join_and_compute::ElGamalCiphertext& token,
+std::string TokenToTLS(const private_join_and_compute::ElGamalCiphertext &token,
                        uint64_t epoch_id);
+absl::StatusOr<std::vector<ValidationToken>> LoadTokensFromFile(
+    const std::string &public_key, const std::string &db_name,
+    absl::string_view);
 }  // namespace prtoken
 
 #endif  // PRTOKEN_STORAGE_H_

@@ -23,19 +23,19 @@
 #include <utility>
 #include <vector>
 
-#include "private_join_and_compute/crypto/big_num.h"
-#include "private_join_and_compute/crypto/ec_group.h"
-#include "private_join_and_compute/crypto/ec_point.h"
-#include "private_join_and_compute/crypto/elgamal.h"
-#include "prtoken/token.h"
-#include "prtoken/token.pb.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "private_join_and_compute/crypto/big_num.h"
+#include "private_join_and_compute/crypto/ec_group.h"
+#include "private_join_and_compute/crypto/ec_point.h"
+#include "private_join_and_compute/crypto/elgamal.h"
 #include "private_join_and_compute/util/status_macros.h"
+#include "prtoken/token.h"
+#include "prtoken/token.pb.h"
 
 namespace prtoken {
 
@@ -44,27 +44,29 @@ using ::private_join_and_compute::ECPoint;
 using ::private_join_and_compute::ElGamalCiphertext;
 using ::private_join_and_compute::elgamal::PrivateKey;
 
-void Decrypter::Init(const private_join_and_compute::ElGamalSecretKey& elgamal_secret_key) {
+void Decrypter::Init(
+    const private_join_and_compute::ElGamalSecretKey &elgamal_secret_key) {
   blinders_context_ = std::make_unique<private_join_and_compute::Context>();
   ec_group_ = std::make_unique<private_join_and_compute::ECGroup>(
-      private_join_and_compute::ECGroup::Create(kCurveId, blinders_context_.get()).value());
+      private_join_and_compute::ECGroup::Create(kCurveId,
+                                                blinders_context_.get())
+          .value());
 
   // Note: Although PrivateKey is an aggregate type, some compilers do not
   // allow passing a BigNum directly, hence we do this {} instantiation.
-  std::unique_ptr<PrivateKey> private_key(
-      new PrivateKey({blinders_context_->CreateBigNum(
-          elgamal_secret_key.x())}));
+  std::unique_ptr<PrivateKey> private_key(new PrivateKey(
+      {blinders_context_->CreateBigNum(elgamal_secret_key.x())}));
 
-  decrypter_ =
-      std::make_unique<private_join_and_compute::ElGamalDecrypter>(std::move(private_key));
+  decrypter_ = std::make_unique<private_join_and_compute::ElGamalDecrypter>(
+      std::move(private_key));
 }
 
 absl::StatusOr<std::string> Decrypter::Decrypt(
-    const private_join_and_compute::ElGamalCiphertext& token) const {
+    const private_join_and_compute::ElGamalCiphertext &token) const {
   ASSIGN_OR_RETURN(ECPoint point_u, ec_group_->CreateECPoint(token.u()));
   ASSIGN_OR_RETURN(ECPoint point_e, ec_group_->CreateECPoint(token.e()));
-  private_join_and_compute::elgamal::Ciphertext ciphertext = {std::move(point_u),
-                                              std::move(point_e)};
+  private_join_and_compute::elgamal::Ciphertext ciphertext = {
+      std::move(point_u), std::move(point_e)};
   ASSIGN_OR_RETURN(ECPoint decrypted_token, decrypter_->Decrypt(ciphertext));
   ASSIGN_OR_RETURN(
       BigNum x_recovered,
@@ -75,16 +77,29 @@ absl::StatusOr<std::string> Decrypter::Decrypt(
 }
 
 absl::Status Verifier::DecryptTokens(
+    const std::vector<prtoken::proto::ValidationToken> &tokens,
+    std::vector<proto::PlaintextToken> &messages,
+    std::vector<proto::VerificationErrorReport> &reports) {
+  std::vector<private_join_and_compute::ElGamalCiphertext> ciphertext_tokens;
+  ciphertext_tokens.reserve(tokens.size());
+
+  for (const auto &token : tokens) {
+    ciphertext_tokens.push_back(token.eg_ciphertext());
+  }
+  return DecryptTokens(ciphertext_tokens, messages, reports);
+}
+
+absl::Status Verifier::DecryptTokens(
     absl::Span<const private_join_and_compute::ElGamalCiphertext> tokens,
-    std::vector<proto::PlaintextToken>& messages,
-    std::vector<proto::VerificationErrorReport>& reports) {
+    std::vector<proto::PlaintextToken> &messages,
+    std::vector<proto::VerificationErrorReport> &reports) {
   for (size_t i = 0; i < tokens.size(); ++i) {
-    const private_join_and_compute::ElGamalCiphertext& token = tokens[i];
+    const private_join_and_compute::ElGamalCiphertext &token = tokens[i];
     absl::StatusOr<std::string> message_or = decrypter_->Decrypt(token);
     if (!message_or.ok()) {
-      std::string error_message = absl::StrCat(
-          "Failed to decrypt token at index=", i, " with error ",
-          message_or.status().message());
+      std::string error_message =
+          absl::StrCat("Failed to decrypt token at index=", i, " with error ",
+                       message_or.status().message());
       LOG(INFO) << error_message;
       proto::VerificationErrorReport report;
       report.set_index(i);
@@ -96,9 +111,9 @@ absl::Status Verifier::DecryptTokens(
     absl::StatusOr<proto::PlaintextToken> parsed_message_or =
         validator_->ToProto(*message_or);
     if (!parsed_message_or.ok()) {
-      std::string error_message = absl::StrCat(
-          "Failed to parse token at index=", i, " with error ",
-          parsed_message_or.status().message());
+      std::string error_message =
+          absl::StrCat("Failed to parse token at index=", i, " with error ",
+                       parsed_message_or.status().message());
       LOG(INFO) << error_message;
       proto::VerificationErrorReport report;
       report.set_index(i);
@@ -108,8 +123,8 @@ absl::Status Verifier::DecryptTokens(
       continue;
     }
     if (!parsed_message_or->hmac_valid()) {
-      std::string error_message = absl::StrCat(
-          "Token at index=", i, " has invalid HMAC");
+      std::string error_message =
+          absl::StrCat("Token at index=", i, " has invalid HMAC");
       LOG(INFO) << error_message;
       proto::VerificationErrorReport report;
       report.set_index(i);
@@ -127,22 +142,21 @@ absl::Status Verifier::DecryptTokens(
   return absl::OkStatus();
 }
 
-
 std::map<uint8_t, size_t> Verifier::GetOrdinalHistogram(
-    const std::vector<proto::PlaintextToken>& tokens) {
+    const std::vector<proto::PlaintextToken> &tokens) {
   std::map<uint8_t, size_t> ordinal_counts;
-  for (const proto::PlaintextToken& token : tokens) {
+  for (const proto::PlaintextToken &token : tokens) {
     ordinal_counts[token.ordinal()]++;
   }
   return ordinal_counts;
 }
 
 absl::Status Verifier::VerifyEquivalentOrdinalCounts(
-    const std::vector<proto::PlaintextToken>& tokens) {
+    const std::vector<proto::PlaintextToken> &tokens) {
   // Create a map of ordinals to counts.
   const std::map<uint8_t, size_t> ordinal_counts = GetOrdinalHistogram(tokens);
   // Check that the counts are all the same value.
-  for (const auto& [ordinal, count] : ordinal_counts) {
+  for (const auto &[ordinal, count] : ordinal_counts) {
     if (count != ordinal_counts.begin()->second) {
       return absl::InvalidArgumentError(
           absl::StrCat("Ordinal ", ordinal, " appears ", count,
@@ -156,24 +170,22 @@ absl::Status Verifier::VerifyEquivalentOrdinalCounts(
 absl::Status Verifier::VerifyRevealRate(
     absl::Span<const proto::PlaintextToken> tokens, float p_reveal) {
   int num_revealed = 0;
-  for (const proto::PlaintextToken& token : tokens) {
+  for (const proto::PlaintextToken &token : tokens) {
     if (!IsTokenSignalEmpty(token)) {
       num_revealed++;
     }
   }
-  float actual_reveal_rate =
-      static_cast<float>(num_revealed) / tokens.size();
+  float actual_reveal_rate = static_cast<float>(num_revealed) / tokens.size();
   if (abs(actual_reveal_rate - p_reveal) > kRevealRateTolerance) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Actual reveal rate ", actual_reveal_rate,
-                     " is not within ", kRevealRateTolerance,
-                     " of the expected reveal rate ", p_reveal));
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Actual reveal rate ", actual_reveal_rate, " is not within ",
+        kRevealRateTolerance, " of the expected reveal rate ", p_reveal));
   }
   return absl::OkStatus();
 }
 
 absl::StatusOr<std::unique_ptr<Verifier>> Verifier::Create(
-    const private_join_and_compute::ElGamalSecretKey& elgamal_secret_key,
+    const private_join_and_compute::ElGamalSecretKey &elgamal_secret_key,
     absl::string_view hmac_secret) {
   auto decrypter = std::make_unique<Decrypter>();
   decrypter->Init(elgamal_secret_key);
