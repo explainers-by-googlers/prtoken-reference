@@ -2,6 +2,8 @@
 
 # Fail on any error.
 set -e
+# Display commands to stderr.
+set -x
 
 if [[ -z "${BAZELISK_VERSION}" ]]; then
   BAZELISK_VERSION=v1.15.0
@@ -38,3 +40,28 @@ install_bazelisk
 
 cd ${KOKORO_ARTIFACTS_DIR}/git/prtoken-reference
 bazel build prtoken:all
+
+PRTOKEN_TMP=/tmp/prtoken_temp
+mkdir -p "${PRTOKEN_TMP}"
+EXPECTED_IP=1.2.3.4
+
+bazel-bin/prtoken/prtoken issue \
+    --custom_db_filename=test.db \
+    --custom_key_filename=test_key.json \
+    --output_dir="${PRTOKEN_TMP}" \
+    --num_tokens=10 \
+    --ip="${EXPECTED_IP}"
+
+# Run the verify command and capture the output
+output=$(bazel-bin/prtoken/prtoken verify --token_db "${PRTOKEN_TMP}/test.db" --private_key "${PRTOKEN_TMP}/test_key.json" 2>&1)
+
+# Check if the output contains the expected string
+if [[ "$output" == *"${EXPECTED_IP}"* ]]; then
+  echo "Verification successful: Found $EXPECTED_IP in output."
+  exit 0
+fi
+
+echo "Verification failed: Did not find $EXPECTED_IP in output."
+echo "Output was:"
+echo "$output"
+exit 1

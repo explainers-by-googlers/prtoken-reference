@@ -49,6 +49,9 @@ ABSL_FLAG(std::string, ip, "", "IPv4 or v6 address in string");
 ABSL_FLAG(std::string, output_dir, "/tmp/", "Where to store output data.");
 ABSL_FLAG(std::string, custom_db_filename, "",
           "Append to this file in the output_dir instead of a per-epoch DB.");
+ABSL_FLAG(std::string, custom_key_filename, "",
+          "The json file to store the keys. If empty, default is "
+          "keys-[epoch_second].json");
 
 // For token decryption.
 ABSL_FLAG(std::string, private_key, "",
@@ -123,6 +126,7 @@ absl::Status GenerateAndStoreTokens() {
   float p_reveal = absl::GetFlag(FLAGS_p_reveal);
   std::string output_dir = absl::GetFlag(FLAGS_output_dir);
   std::string custom_db_filename = absl::GetFlag(FLAGS_custom_db_filename);
+  std::string custom_key_filename = absl::GetFlag(FLAGS_custom_key_filename);
 
   // Generate secrets and instantiate an issuer.
   absl::StatusOr<prtoken::proto::ElGamalKeyMaterial> keypair_or =
@@ -158,8 +162,14 @@ absl::Status GenerateAndStoreTokens() {
   // Format epoch_end_time as a string in ISO 8601 UST format YYYYMMDDHHMMSS.
   std::string epoch_end_time_str =
       absl::FormatTime("%Y%m%d%H%M%S", epoch_end_time, absl::UTCTimeZone());
-  const std::string key_file = file::JoinPath(
-      output_dir, absl::StrCat("keys-", epoch_end_time_str, ".json"));
+
+  std::string key_file;
+  if (!custom_key_filename.empty()) {
+    key_file.assign(file::JoinPath(output_dir, custom_key_filename));
+  } else {
+    key_file = absl::StrCat(output_dir, "/keys-", epoch_end_time_str, ".json");
+  }
+
   std::string tokens_db_file;
   if (!custom_db_filename.empty()) {
     tokens_db_file.assign(file::JoinPath(output_dir, custom_db_filename));
