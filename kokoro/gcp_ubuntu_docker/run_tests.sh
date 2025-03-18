@@ -39,21 +39,30 @@ function install_bazelisk {
 install_bazelisk
 
 cd ${KOKORO_ARTIFACTS_DIR}/git/prtoken-reference
-bazel build prtoken:all
+
+current_epoch_seconds=$(date +%s)
 
 PRTOKEN_TMP=/tmp/prtoken_temp
 mkdir -p "${PRTOKEN_TMP}"
 EXPECTED_IP=1.2.3.4
+PRIVATE_KEY_FILE="test_key_${current_epoch_seconds}.json"
+RESULT_TABLE="results_${current_epoch_seconds}"
 
-bazel-bin/prtoken/prtoken issue \
+bazel run //prtoken:prtoken issue -- \
     --custom_db_filename=test.db \
-    --custom_key_filename=test_key.json \
+    --custom_key_filename="${PRIVATE_KEY_FILE}" \
     --output_dir="${PRTOKEN_TMP}" \
     --num_tokens=10 \
     --ip="${EXPECTED_IP}"
 
-# Run the verify command and capture the output
-output=$(bazel-bin/prtoken/prtoken verify --token_db "${PRTOKEN_TMP}/test.db" --private_key "${PRTOKEN_TMP}/test_key.json" 2>&1)
+bazel run  //prtoken:prtoken verify -- \
+    --token_db "${PRTOKEN_TMP}/test.db" \
+    --private_key "${PRTOKEN_TMP}/${PRIVATE_KEY_FILE}" \
+    --result_table "${RESULT_TABLE}"
+
+# Run the query to get the output
+query="select t.e, r.m, r.ordinal from tokens as t join ${RESULT_TABLE} as r where t.e = r.e"
+output=$(sqlite3 "${PRTOKEN_TMP}/test.db" "${query}" 2>&1)
 
 # Check if the output contains the expected string
 if [[ "$output" == *"${EXPECTED_IP}"* ]]; then

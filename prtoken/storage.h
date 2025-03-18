@@ -55,6 +55,8 @@ using ValidationBucket =
 // Singular Token database file.
 class TokensDB {
  public:
+  explicit TokensDB(std::string token_table) : token_table_(token_table) {};
+  TokensDB() : token_table_("tokens") {};
   absl::Status Open(const std::string &db_path);
   absl::Status Insert(
       absl::Span<const ElGamalCiphertext> tokens,
@@ -64,8 +66,7 @@ class TokensDB {
   // Process tokens found in rows matching the given public key.
   // It calls OnFinishGetToken() after each token is read.
   // ProcessTokens() fails if OnFinishGetToken() returns any error status.
-  absl::Status ProcessTokens(const std::string &public_key,
-                             const std::string &token_table);
+  absl::Status ProcessTokens(const std::string &public_key);
   // A hook for subclasses to perform additional token processing.
   // The implementation decides what error to raise. If OnFinishGetToken()
   // fails, ProcessTokens() stops and returns that error.
@@ -76,11 +77,15 @@ class TokensDB {
   void close();
   virtual ~TokensDB();
 
+ protected:
+    sqlite3 *get_db() { return db_; };
+
  private:
   absl::Status readTokenFromStatement(sqlite3_stmt *stmt,
                                       ValidationToken &token);
   sqlite3 *db_;
   std::string db_path_;
+  std::string token_table_;
   constexpr static char kBase64URIEncodedG[] =
       "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFiv"
       "OM1drMV7Oy7ZAaDe_UfU";

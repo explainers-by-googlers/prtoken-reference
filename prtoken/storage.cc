@@ -93,9 +93,11 @@ absl::Status TokensDB::GetValidationBuckets(
     std::set<ValidationBucket> &buckets) {
   sqlite3_stmt *stmt;
   absl::Cleanup cleanup = [&stmt] { sqlite3_finalize(stmt); };
-  const char *sql_select =
-      "SELECT p_reveal, epoch_id FROM tokens GROUP BY p_reveal, epoch_id;";
-  if (sqlite3_prepare_v2(db_, sql_select, -1, &stmt, nullptr) != SQLITE_OK) {
+  std::string sql_select = absl::StrFormat(
+      "SELECT p_reveal, epoch_id FROM %s GROUP BY p_reveal, epoch_id;",
+      token_table_);
+  if (sqlite3_prepare_v2(db_, sql_select.c_str(), -1, &stmt, nullptr) !=
+      SQLITE_OK) {
     return absl::UnavailableError(
         absl::StrCat("Failed to prepare statement: ", sqlite3_errmsg(db_)));
   }
@@ -223,9 +225,11 @@ absl::Status TokensDB::readTokenFromStatement(sqlite3_stmt *stmt,
 absl::Status TokensDB::GetTokensForValidationBucket(
     const ValidationBucket &bucket, std::vector<ValidationToken> &tokens) {
   sqlite3_stmt *stmt;
-  const char *sql_select =
-      "SELECT u, e, y FROM tokens WHERE p_reveal = ? AND epoch_id = ?;";
-  if (sqlite3_prepare_v2(db_, sql_select, -1, &stmt, nullptr) != SQLITE_OK) {
+  std::string sql_select = absl::StrFormat(
+      "SELECT u, e, y FROM %s WHERE p_reveal = ? AND epoch_id = ?;",
+      token_table_);
+  if (sqlite3_prepare_v2(db_, sql_select.c_str(), -1, &stmt, nullptr) !=
+      SQLITE_OK) {
     absl::Status status = absl::UnavailableError(
         absl::StrCat("Failed to prepare statement: ", sqlite3_errmsg(db_)));
     sqlite3_finalize(stmt);
@@ -250,11 +254,10 @@ absl::Status TokensDB::GetTokensForValidationBucket(
   return absl::OkStatus();
 }
 
-absl::Status TokensDB::ProcessTokens(const std::string &public_key,
-                                     const std::string &token_table) {
+absl::Status TokensDB::ProcessTokens(const std::string &public_key) {
   sqlite3_stmt *stmt;
   std::string sql_select = absl::StrFormat(
-      "SELECT u, e, y FROM %s WHERE y = \"%s\"", token_table, public_key);
+      "SELECT u, e, y FROM %s WHERE y = \"%s\"", token_table_, public_key);
 
   if (sqlite3_prepare_v2(db_, sql_select.c_str(), -1, &stmt, nullptr) !=
       SQLITE_OK) {

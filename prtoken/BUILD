@@ -100,6 +100,7 @@ grpc_proto_library(
     deps = ["@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto"],
 )
 
+# Command tool to issue and verify probabilistic reveal tokens for IP address.
 cc_binary(
     name = "prtoken",
     srcs = ["main.cc"],

@@ -12,6 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// The main function issues and verifies PRTokens for IP addresses.
+//
+// Usage:
+//   prtoken issue --ip=1.2.3.4 --num_tokens=100 --p_reveal=0.1
+//   --output_dir=/tmp/ --custom_db_filename=tokens.db
+//   --custom_key_filename=keys.json
+//
+//   prtoken verify --private_key=keys.json --token_db=tokens.db
+//   --table_name=tokens --result_table=results
+//
+// The issue subcommand generates a set of tokens and stores them in a SQLite
+// database file.
+// The verify subcommand decrypts/verify the tokens and stores them to a new
+// table in the same SQLite database file.
+
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
@@ -60,6 +75,9 @@ ABSL_FLAG(std::string, token_db, "",
           "Required string for the path to the token db file.");
 ABSL_FLAG(std::string, table_name, "tokens",
           "The table that stores the tokens.");
+ABSL_FLAG(std::string, result_table, "",
+          "The table name to store the decryptions. If empty, default is "
+          "results_[epoch_second].");
 
 namespace {
 
@@ -75,9 +93,19 @@ constexpr size_t SignalSizeLimit = prtoken::token_structure.signal_size;
 // Read tokens from a DB and decrypt them to IP strings.
 class TokensDBWithIPVerifier : public prtoken::TokensDB {
  public:
-  explicit TokensDBWithIPVerifier(
-      std::unique_ptr<prtoken::Verifier> verifier_ptr)
-      : verifier_ptr_(std::move(verifier_ptr)) {}
+  TokensDBWithIPVerifier(std::unique_ptr<prtoken::Verifier> verifier_ptr,
+                         std::string token_table,
+
+                         std::string result_table)
+      : TokensDB(token_table), verifier_ptr_(std::move(verifier_ptr)) {
+    result_table_ =
+        result_table.empty()
+            ? absl::StrCat("results_",
+                           absl::FormatTime("%Y%m%d%H%M%S", absl::Now(),
+                                            absl::UTCTimeZone()))
+            : result_table;
+  };
+
   ~TokensDBWithIPVerifier() override = default;
 
   // Transform IPv6 byte array into string.
@@ -92,49 +120,105 @@ class TokensDBWithIPVerifier : public prtoken::TokensDB {
     return std::string(ip6_str);
   }
 
+  absl::Status CreateResultTable() {
+    char *errmsg = nullptr;
+    // Create a table for decryption results.
+    std::cout << "table name:" << result_table_ << std::endl;
+    std::string sql_create = absl::StrFormat(
+        "CREATE TABLE IF NOT EXISTS \"%s\" (e TEXT, ordinal INTEGER, m TEXT, "
+        "error TEXT);",
+        result_table_);
+    // Execute the create table statement.
+    if (sqlite3_exec(get_db(), sql_create.c_str(), nullptr, nullptr, &errmsg) !=
+        SQLITE_OK) {
+      absl::Status status = absl::UnavailableError(
+          absl::StrCat("Failed to create table: ", errmsg));
+      sqlite3_free(errmsg);
+      sqlite3_close(get_db());
+      return status;
+    }
+    return absl::OkStatus();
+  }
+
+  absl::Status CommitResult(sqlite3_stmt *stmt) {
+    absl::Status status = absl::OkStatus();
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+      status = absl::UnavailableError(
+          absl::StrCat("Failed to insert token: ", sqlite3_errmsg(get_db())));
+    }
+    sqlite3_finalize(stmt);
+    return status;
+  }
+
   absl::Status OnFinishGetToken(
       const prtoken::ValidationToken &token) override {
     std::vector<prtoken::proto::PlaintextToken> decrypted_tokens;
     std::vector<prtoken::proto::VerificationErrorReport> reports;
+
     processed_++;
+    sqlite3_stmt *stmt;
+    std::string sql_insert = absl::StrFormat(
+        "INSERT INTO %s (e, ordinal, m, error) VALUES (?, ?, ?, ?);",
+        result_table_);
+
+    if (sqlite3_prepare_v2(get_db(), sql_insert.c_str(), -1, &stmt, nullptr) !=
+        SQLITE_OK) {
+      absl::Status status = absl::UnavailableError(absl::StrCat(
+          "Failed to prepare statement: ", sqlite3_errmsg(get_db())));
+      sqlite3_finalize(stmt);
+      return status;
+    }
+
+    std::string e_escaped;
+    absl::WebSafeBase64Escape(token.eg_ciphertext().e(), &e_escaped);
+    // Restore the encrypted message to join with token table.
+    sqlite3_bind_text(stmt, 1, e_escaped.c_str(), e_escaped.size(),
+                      SQLITE_STATIC);
+
     if (!verifier_ptr_->DecryptToken(token.eg_ciphertext(), decrypted_tokens,
                                      reports)) {
       errors_++;
       auto report = reports.back();
-      std::string e_escaped;
-      absl::WebSafeBase64Escape(token.eg_ciphertext().e(), &e_escaped);
-      LOG(ERROR) << "Got error for token: " << e_escaped;
-      LOG(ERROR) << ". Error: " << report.error_message() << std::endl;
-      // Do not stop the token processing for single token error.
-      return absl::OkStatus();
-    }
+      sqlite3_bind_text(stmt, 3, "", 0, SQLITE_STATIC);
+      sqlite3_bind_text(stmt, 4, report.error_message().c_str(),
+                        report.error_message().size(), SQLITE_STATIC);
+      // As long as we can store the error report, not stop the token
+      // processing.
+      return CommitResult(stmt);
+    };
 
-    absl::StatusOr<std::string> result = IPv6ByteArrayToString(
-        std::string(decrypted_tokens.back().signal().begin(),
-                    decrypted_tokens.back().signal().end()));
+    prtoken::proto::PlaintextToken decrypted_token = decrypted_tokens.back();
+    absl::StatusOr<std::string> result = IPv6ByteArrayToString(std::string(
+        decrypted_token.signal().begin(), decrypted_token.signal().end()));
     if (!result.ok()) {
       errors_++;
-      prtoken::proto::VerificationErrorReport report;
-      LOG(ERROR) << "Failed to parse decrypted token to IP";
-      // Do not stop the token processing for single token error.
-      return absl::OkStatus();
+      sqlite3_bind_text(stmt, 3, "", 0, SQLITE_STATIC);
+      sqlite3_bind_text(stmt, 4, "Failed to parse decrypted token to IP", -1,
+                        SQLITE_STATIC);
+      return CommitResult(stmt);
     }
-    std::string decrypted_str = *result;
 
-    // TODO(b/400517728): Inject the the result back to the DB file.
-    std::cout << "IP: " << ((decrypted_str == "::") ? "null" : decrypted_str)
-              << ", validation: " << decrypted_tokens[0].hmac_valid()
-              << std::endl;
-    return absl::OkStatus();
+    std::string decrypted_str = ((*result == "::") ? "null" : *result);
+    sqlite3_bind_int(stmt, 2, decrypted_token.ordinal());
+    sqlite3_bind_text(stmt, 3, decrypted_str.c_str(), decrypted_str.size(),
+                      SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 4, "", 0, SQLITE_STATIC);
+    return CommitResult(stmt);
   }
 
   absl::Status report() {
     if (processed_ == 0) {
       return absl::NotFoundError("No tokens were processed.");
     }
+    std::cout
+        << "Try query results by: "
+        << absl::StrFormat(
+               "select t.e, r.m from tokens as t join %s as r where t.e = r.e;",
+               result_table_)
+        << std::endl;
     if (errors_ == 0 && processed_ > 0) {
-      std::cout << "Successfully Processed " << processed_ << " tokens"
-                << std::endl;
+      std::cout << "Successfully Processed " << processed_
+                << " tokens with no errors." << std::endl;
       return absl::OkStatus();
     }
     return absl::InvalidArgumentError(absl::StrCat(
@@ -144,6 +228,7 @@ class TokensDBWithIPVerifier : public prtoken::TokensDB {
  private:
   uint16_t processed_ = 0;
   uint16_t errors_ = 0;
+  std::string result_table_;
   std::unique_ptr<prtoken::Verifier> verifier_ptr_;
 };
 
@@ -282,7 +367,6 @@ absl::Status DecryptTokens() {
   const prtoken::EpochKeyMaterials &key_materials = *key_materials_or;
   std::string y_escaped, ciphertext;
   absl::WebSafeBase64Escape(key_materials.eg().public_key().y(), &y_escaped);
-
   absl::StatusOr<std::unique_ptr<prtoken::Verifier>> verifier =
       prtoken::Verifier::Create(key_materials.eg().secret_key(),
                                 key_materials.hmac_key());
@@ -290,13 +374,20 @@ absl::Status DecryptTokens() {
     return absl::InternalError("Failed to materialize secret keys.");
   }
 
-  TokensDBWithIPVerifier db(std::move(verifier.value()));
+  TokensDBWithIPVerifier db(std::move(verifier.value()),
+                            absl::GetFlag(FLAGS_table_name),
+                            absl::GetFlag(FLAGS_result_table));
   absl::Status status = db.Open(token_db);
   if (!status.ok()) {
     LOG(ERROR) << "Failed to open tokens database: " << status.message();
     return status;
   }
-  status = db.ProcessTokens(y_escaped, absl::GetFlag(FLAGS_table_name));
+  status = db.CreateResultTable();
+  if (!status.ok()) {
+    LOG(ERROR) << "Failed to create result table: " << status.message();
+    return status;
+  }
+  status = db.ProcessTokens(y_escaped);
   db.close();
   if (status.ok()) {
     return db.report();
