@@ -270,9 +270,21 @@ absl::Status TokensDB::GetTokens(const std::string &public_key,
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     ValidationToken token;
     RETURN_IF_ERROR(readTokenFromStatement(stmt, token));
+    // Probably we could batch token processing to save some I/O operations.
+    absl::Status status = OnFinishGetToken(token);
+    // Ignore single token error. Only return for I/O errors, e.g. failed
+    // to store the decrypted result.
+    if (!status.ok()) {
+      sqlite3_finalize(stmt);
+      return status;
+    }
     tokens.push_back(token);
   }
   sqlite3_finalize(stmt);
+  return absl::OkStatus();
+}
+
+absl::Status TokensDB::OnFinishGetToken(const ValidationToken &token) {
   return absl::OkStatus();
 }
 

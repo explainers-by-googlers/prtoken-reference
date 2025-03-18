@@ -62,9 +62,15 @@ class TokensDB {
       float p_reveal, absl::Time expiration_time);
   absl::Status GetValidationBuckets(std::set<ValidationBucket> &buckets);
   // Populate a vector of tokens found in rows matching the given public key.
+  // It calls OnFinishGetToken() after each token is read.
+  // GetTokens() fails if OnFinishGetToken() returns any error status.
   absl::Status GetTokens(const std::string &public_key,
                          const std::string &token_table,
                          std::vector<ValidationToken> &tokens);
+  // A hook for subclasses to perform additional token processing.
+  // The implementation decides what error to raise. If OnFinishGetToken()
+  // fails, GetTokens() stops and returns that error.
+  virtual absl::Status OnFinishGetToken(const ValidationToken &token);
   // Populate a vector of tokens found in rows that match the given bucket.
   absl::Status GetTokensForValidationBucket(
       const ValidationBucket &bucket, std::vector<ValidationToken> &tokens);
@@ -124,7 +130,7 @@ std::string TokenToTLS(const private_join_and_compute::ElGamalCiphertext &token,
                        uint64_t epoch_id);
 absl::StatusOr<std::vector<ValidationToken>> LoadTokensFromFile(
     const std::string &public_key, const std::string &db_name,
-    absl::string_view);
+    absl::string_view tokens_db_path);
 }  // namespace prtoken
 
 #endif  // PRTOKEN_STORAGE_H_
