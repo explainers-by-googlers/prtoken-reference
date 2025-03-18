@@ -82,12 +82,10 @@ class Verifier {
       absl::Span<const private_join_and_compute::ElGamalCiphertext> tokens,
       std::vector<proto::PlaintextToken> &messages,
       std::vector<proto::VerificationErrorReport> &reports);
-
-  // Overload DecryptTokens() but accepting prtoken::proto::ValidationToken.
-  absl::Status DecryptTokens(
-      const std::vector<prtoken::proto::ValidationToken> &tokens,
-      std::vector<proto::PlaintextToken> &messages,
-      std::vector<proto::VerificationErrorReport> &reports);
+  // Returns true if successfully decrypted a token.
+  bool DecryptToken(const private_join_and_compute::ElGamalCiphertext &token,
+                    std::vector<proto::PlaintextToken> &messages,
+                    std::vector<proto::VerificationErrorReport> &reports);
 
   std::map<uint8_t, size_t> GetOrdinalHistogram(
       const std::vector<proto::PlaintextToken> &tokens);

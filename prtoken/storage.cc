@@ -250,11 +250,8 @@ absl::Status TokensDB::GetTokensForValidationBucket(
   return absl::OkStatus();
 }
 
-// Get the tokens for the given public key.
-// Maybe I don't need to output tokens, instead decrypt the token on the fly.
-absl::Status TokensDB::GetTokens(const std::string &public_key,
-                                 const std::string &token_table,
-                                 std::vector<ValidationToken> &tokens) {
+absl::Status TokensDB::ProcessTokens(const std::string &public_key,
+                                     const std::string &token_table) {
   sqlite3_stmt *stmt;
   std::string sql_select = absl::StrFormat(
       "SELECT u, e, y FROM %s WHERE y = \"%s\"", token_table, public_key);
@@ -278,14 +275,13 @@ absl::Status TokensDB::GetTokens(const std::string &public_key,
       sqlite3_finalize(stmt);
       return status;
     }
-    tokens.push_back(token);
   }
   sqlite3_finalize(stmt);
   return absl::OkStatus();
 }
 
 absl::Status TokensDB::OnFinishGetToken(const ValidationToken &token) {
-  return absl::OkStatus();
+  return absl::UnimplementedError("OnFinishGetToken is not implemented.");
 }
 
 void TokensDB::close() {
@@ -512,25 +508,4 @@ absl::Status WriteTokensToFile(
   tokens_db.close();
   return absl::OkStatus();
 }
-
-absl::StatusOr<std::vector<ValidationToken>> LoadTokensFromFile(
-    const std::string &public_key, const std::string &table_name,
-    absl::string_view tokens_db_path) {
-  TokensDB tokens_db;
-  absl::Status status = tokens_db.Open(std::string(tokens_db_path));
-  if (!status.ok()) {
-    LOG(ERROR) << "Failed to open tokens database: " << status.message();
-    return status;
-  }
-
-  std::vector<ValidationToken> tokens;
-  status = tokens_db.GetTokens(public_key, table_name, tokens);
-  if (!status.ok()) {
-    LOG(ERROR) << "Failed to get tokens: " << status.message();
-    return status;
-  }
-  tokens_db.close();
-  return tokens;
-}
-
 }  // namespace prtoken

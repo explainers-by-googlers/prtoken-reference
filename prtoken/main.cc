@@ -72,6 +72,81 @@ constexpr int kErrorTokenWrite = 5;
 // This is an alias to aid readability.
 constexpr size_t SignalSizeLimit = prtoken::token_structure.signal_size;
 
+// Read tokens from a DB and decrypt them to IP strings.
+class TokensDBWithIPVerifier : public prtoken::TokensDB {
+ public:
+  explicit TokensDBWithIPVerifier(
+      std::unique_ptr<prtoken::Verifier> verifier_ptr)
+      : verifier_ptr_(std::move(verifier_ptr)) {}
+  ~TokensDBWithIPVerifier() override = default;
+
+  // Transform IPv6 byte array into string.
+  absl::StatusOr<std::string> IPv6ByteArrayToString(
+      const std::string_view ip_string) {
+    struct in6_addr ip6_addr;
+    std::memcpy(&ip6_addr, ip_string.data(), sizeof(ip6_addr));
+    char ip6_str[INET6_ADDRSTRLEN];
+    if (inet_ntop(AF_INET6, &ip6_addr, ip6_str, INET6_ADDRSTRLEN) == nullptr) {
+      return absl::InternalError("Failed to convert IPv6 address to string.");
+    }
+    return std::string(ip6_str);
+  }
+
+  absl::Status OnFinishGetToken(
+      const prtoken::ValidationToken &token) override {
+    std::vector<prtoken::proto::PlaintextToken> decrypted_tokens;
+    std::vector<prtoken::proto::VerificationErrorReport> reports;
+    processed_++;
+    if (!verifier_ptr_->DecryptToken(token.eg_ciphertext(), decrypted_tokens,
+                                     reports)) {
+      errors_++;
+      auto report = reports.back();
+      std::string e_escaped;
+      absl::WebSafeBase64Escape(token.eg_ciphertext().e(), &e_escaped);
+      LOG(ERROR) << "Got error for token: " << e_escaped;
+      LOG(ERROR) << ". Error: " << report.error_message() << std::endl;
+      // Do not stop the token processing for single token error.
+      return absl::OkStatus();
+    }
+
+    absl::StatusOr<std::string> result = IPv6ByteArrayToString(
+        std::string(decrypted_tokens.back().signal().begin(),
+                    decrypted_tokens.back().signal().end()));
+    if (!result.ok()) {
+      errors_++;
+      prtoken::proto::VerificationErrorReport report;
+      LOG(ERROR) << "Failed to parse decrypted token to IP";
+      // Do not stop the token processing for single token error.
+      return absl::OkStatus();
+    }
+    std::string decrypted_str = *result;
+
+    // TODO(b/400517728): Inject the the result back to the DB file.
+    std::cout << "IP: " << ((decrypted_str == "::") ? "null" : decrypted_str)
+              << ", validation: " << decrypted_tokens[0].hmac_valid()
+              << std::endl;
+    return absl::OkStatus();
+  }
+
+  absl::Status report() {
+    if (processed_ == 0) {
+      return absl::NotFoundError("No tokens were processed.");
+    }
+    if (errors_ == 0 && processed_ > 0) {
+      std::cout << "Successfully Processed " << processed_ << " tokens"
+                << std::endl;
+      return absl::OkStatus();
+    }
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Processed ", processed_, " tokens, ", errors_, " failed."));
+  }
+
+ private:
+  uint16_t processed_ = 0;
+  uint16_t errors_ = 0;
+  std::unique_ptr<prtoken::Verifier> verifier_ptr_;
+};
+
 // Helper to check if the input is a valid IP address.
 bool IsValidIPAddress(absl::string_view ip_string) {
   struct in_addr ip4_addr;
@@ -102,18 +177,6 @@ absl::StatusOr<std::array<uint8_t, SignalSizeLimit>> IPStringToByteArray(
     return ipv6_bytes;
   }
   return absl::InvalidArgumentError("Invalid IPv4 or IPv6 address.");
-}
-
-// Transform IPv6 byte array into string.
-absl::StatusOr<std::string> IPv6ByteArrayToString(
-    const std::string_view ip_string) {
-  struct in6_addr ip6_addr;
-  std::memcpy(&ip6_addr, ip_string.data(), sizeof(ip6_addr));
-  char ip6_str[INET6_ADDRSTRLEN];
-  if (inet_ntop(AF_INET6, &ip6_addr, ip6_str, INET6_ADDRSTRLEN) == nullptr) {
-    return absl::InternalError("Failed to convert IPv6 address to string.");
-  }
-  return std::string(ip6_str);
 }
 
 // Function to generate and store tokens
@@ -219,14 +282,6 @@ absl::Status DecryptTokens() {
   const prtoken::EpochKeyMaterials &key_materials = *key_materials_or;
   std::string y_escaped, ciphertext;
   absl::WebSafeBase64Escape(key_materials.eg().public_key().y(), &y_escaped);
-  absl::StatusOr<std::vector<prtoken::ValidationToken>> tokens_or =
-      prtoken::LoadTokensFromFile(y_escaped, absl::GetFlag(FLAGS_table_name),
-                                  token_db);
-  if (!tokens_or.ok()) {
-    return absl::InternalError("Failed to load tokens from file.");
-  }
-  const std::vector<prtoken::ValidationToken> &tokens = *tokens_or;
-  LOG(INFO) << "Tokens Loaded: " << tokens.size();
 
   absl::StatusOr<std::unique_ptr<prtoken::Verifier>> verifier =
       prtoken::Verifier::Create(key_materials.eg().secret_key(),
@@ -234,30 +289,19 @@ absl::Status DecryptTokens() {
   if (!verifier.ok()) {
     return absl::InternalError("Failed to materialize secret keys.");
   }
-  std::unique_ptr<prtoken::Verifier> verifier_ptr(std::move(verifier.value()));
-  std::vector<prtoken::proto::PlaintextToken> decrypted_tokens;
-  std::vector<prtoken::proto::VerificationErrorReport> reports;
-  auto status = verifier_ptr->DecryptTokens(tokens, decrypted_tokens, reports);
+
+  TokensDBWithIPVerifier db(std::move(verifier.value()));
+  absl::Status status = db.Open(token_db);
   if (!status.ok()) {
-    return absl::InternalError("Failed to decrypt tokens.");
+    LOG(ERROR) << "Failed to open tokens database: " << status.message();
+    return status;
   }
-  for (long unsigned i = 0; i < decrypted_tokens.size(); i++) {
-    absl::StatusOr<std::string> result =
-        IPv6ByteArrayToString(std::string(decrypted_tokens[i].signal().begin(),
-                                          decrypted_tokens[i].signal().end()));
-    // This is not perfectly correct. Following CLs will remove this and expose
-    // errors in Verifier::DecryptTokens() method.
-    if (!result.ok()) {
-      LOG(ERROR) << "Failed to decrypt tokens: " << tokens[i];
-      continue;
-    }
-    std::string decrypted_str = *result;
-    // TODO(b/400517728): Inject the the result back to the DB file.
-    std::cout << "IP: " << ((decrypted_str == "::") ? "null" : decrypted_str)
-              << ", validation: " << decrypted_tokens[i].hmac_valid()
-              << std::endl;
+  status = db.ProcessTokens(y_escaped, absl::GetFlag(FLAGS_table_name));
+  db.close();
+  if (status.ok()) {
+    return db.report();
   }
-  return absl::OkStatus();
+  return status;
 }
 }  // namespace
 

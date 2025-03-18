@@ -77,69 +77,60 @@ absl::StatusOr<std::string> Decrypter::Decrypt(
 }
 
 absl::Status Verifier::DecryptTokens(
-    const std::vector<prtoken::proto::ValidationToken> &tokens,
-    std::vector<proto::PlaintextToken> &messages,
-    std::vector<proto::VerificationErrorReport> &reports) {
-  std::vector<private_join_and_compute::ElGamalCiphertext> ciphertext_tokens;
-  ciphertext_tokens.reserve(tokens.size());
-
-  for (const auto &token : tokens) {
-    ciphertext_tokens.push_back(token.eg_ciphertext());
-  }
-  return DecryptTokens(ciphertext_tokens, messages, reports);
-}
-
-absl::Status Verifier::DecryptTokens(
     absl::Span<const private_join_and_compute::ElGamalCiphertext> tokens,
     std::vector<proto::PlaintextToken> &messages,
     std::vector<proto::VerificationErrorReport> &reports) {
-  for (size_t i = 0; i < tokens.size(); ++i) {
-    const private_join_and_compute::ElGamalCiphertext &token = tokens[i];
-    absl::StatusOr<std::string> message_or = decrypter_->Decrypt(token);
-    if (!message_or.ok()) {
-      std::string error_message =
-          absl::StrCat("Failed to decrypt token at index=", i, " with error ",
-                       message_or.status().message());
-      LOG(INFO) << error_message;
-      proto::VerificationErrorReport report;
-      report.set_index(i);
-      report.set_error(proto::VERIFICATION_ERROR_DECRYPT_FAILED);
-      report.set_error_message(error_message);
-      reports.push_back(report);
-      continue;
-    }
-    absl::StatusOr<proto::PlaintextToken> parsed_message_or =
-        validator_->ToProto(*message_or);
-    if (!parsed_message_or.ok()) {
-      std::string error_message =
-          absl::StrCat("Failed to parse token at index=", i, " with error ",
-                       parsed_message_or.status().message());
-      LOG(INFO) << error_message;
-      proto::VerificationErrorReport report;
-      report.set_index(i);
-      report.set_error(proto::VERIFICATION_ERROR_PARSE_FAILED);
-      report.set_error_message(error_message);
-      reports.push_back(report);
-      continue;
-    }
-    if (!parsed_message_or->hmac_valid()) {
-      std::string error_message =
-          absl::StrCat("Token at index=", i, " has invalid HMAC");
-      LOG(INFO) << error_message;
-      proto::VerificationErrorReport report;
-      report.set_index(i);
-      report.set_error(proto::VERIFICATION_ERROR_INVALID_HMAC);
-      report.set_error_message(error_message);
-      reports.push_back(report);
-      continue;
-    }
-    messages.push_back(*parsed_message_or);
+  for (auto token : tokens) {
+    DecryptToken(token, messages, reports);
   }
   if (!reports.empty()) {
     return absl::InternalError(
         absl::StrCat(reports.size(), " tokens had errors."));
   }
   return absl::OkStatus();
+}
+
+bool Verifier::DecryptToken(
+    const private_join_and_compute::ElGamalCiphertext &token,
+    std::vector<proto::PlaintextToken> &messages,
+    std::vector<proto::VerificationErrorReport> &reports) {
+  size_t index = messages.size() + reports.size();
+  proto::VerificationErrorReport report;
+  report.set_index(index);
+  absl::StatusOr<std::string> message_or = decrypter_->Decrypt(token);
+  if (!message_or.ok()) {
+    std::string error_message =
+        absl::StrCat("Failed to decrypt token at index=", index, " with error ",
+                     message_or.status().message());
+    LOG(INFO) << error_message;
+    report.set_error(proto::VERIFICATION_ERROR_DECRYPT_FAILED);
+    report.set_error_message(error_message);
+    reports.push_back(report);
+    return false;
+  }
+  absl::StatusOr<proto::PlaintextToken> parsed_message_or =
+      validator_->ToProto(*message_or);
+  if (!parsed_message_or.ok()) {
+    std::string error_message =
+        absl::StrCat("Failed to parse token at index=", index, " with error ",
+                     parsed_message_or.status().message());
+    LOG(INFO) << error_message;
+    report.set_error(proto::VERIFICATION_ERROR_PARSE_FAILED);
+    report.set_error_message(error_message);
+    reports.push_back(report);
+    return false;
+  }
+  if (!parsed_message_or->hmac_valid()) {
+    std::string error_message =
+        absl::StrCat("Token at index=", index, " has invalid HMAC");
+    LOG(INFO) << error_message;
+    report.set_error(proto::VERIFICATION_ERROR_INVALID_HMAC);
+    report.set_error_message(error_message);
+    reports.push_back(report);
+    return false;
+  }
+  messages.push_back(*parsed_message_or);
+  return true;
 }
 
 std::map<uint8_t, size_t> Verifier::GetOrdinalHistogram(
