@@ -101,21 +101,19 @@ grpc_proto_library(
 )
 
 # Command tool to issue and verify probabilistic reveal tokens for IP address.
-cc_binary(
-    name = "prtoken",
-    srcs = ["main.cc"],
+cc_library(
+    name = "command",
+    srcs = ["command.cc"],
+    hdrs = ["command.h"],
     deps = [
-        ":issuer",
-        ":storage",
         ":token",
         ":token_proto",
-        "@abseil-cpp//absl/flags:flag",
-        "@abseil-cpp//absl/flags:parse",
+        ":storage",
+        ":verifier",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/time",
-        "@or-tools//ortools/base:path",
     ],
 )
 
@@ -143,6 +141,22 @@ cc_library(
     ],
 )
 
+cc_binary(
+    name = "prtoken",
+    srcs = ["main.cc"],
+    deps = [
+        ":issuer",
+        ":command",
+        ":verifier",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@or-tools//ortools/base:path",
+    ],
+)
+
 cc_library(
     name = "issuer_test_lib",
     testonly = 1,
@@ -160,6 +174,23 @@ cc_library(
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/strings:string_view",
         "@private_join_and_compute//private_join_and_compute/util:status_includes",
+    ],
+)
+
+cc_test(
+    name = "command_test",
+    srcs = ["command_test.cc"],
+    deps = [
+        ":issuer_test_lib",
+        ":storage",
+        ":command",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/time",
+        "@or-tools//ortools/base:path",
+        "@or-tools//ortools/base:status_matchers",
     ],
 )
 
