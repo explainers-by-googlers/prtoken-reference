@@ -42,6 +42,9 @@ cd ${KOKORO_ARTIFACTS_DIR}/git/prtoken-reference
 
 bazel test prtoken:storage_test
 bazel test prtoken:command_test
+bazel test prtoken:issuance_verification_test
+bazel test --config=benchmark prtoken:issuance_verification_test \
+      --test_arg=--benchmark_filter=all
 
 current_epoch_seconds=$(date +%s)
 

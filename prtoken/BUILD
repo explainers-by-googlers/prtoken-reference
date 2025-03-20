@@ -209,3 +209,26 @@ cc_test(
         "@or-tools//ortools/base:status_matchers",
     ],
 )
+
+cc_test(
+    name = "issuance_verification_test",
+    srcs = ["issuance_verification_test.cc"],
+    deps = [
+        ":client",
+        ":issuer",
+        ":issuer_test_lib",
+        ":token",
+        ":token_proto",
+        ":verifier",
+        ":command",
+        "@or-tools//ortools/base:path",
+        "@or-tools//ortools/base:status_matchers",
+        "@google_benchmark//:benchmark",
+        "@googletest//:gtest_main",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings:string_view",
+        "@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto",
+    ],
+)
