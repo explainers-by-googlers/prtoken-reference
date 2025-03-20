@@ -175,7 +175,6 @@ cc_library(
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/strings:string_view",
-        "@private_join_and_compute//private_join_and_compute/util:status_includes",
     ],
 )
 
