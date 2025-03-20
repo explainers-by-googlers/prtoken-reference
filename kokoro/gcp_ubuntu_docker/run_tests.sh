@@ -40,6 +40,8 @@ install_bazelisk
 
 cd ${KOKORO_ARTIFACTS_DIR}/git/prtoken-reference
 
+bazel test prtoken:storage_test
+
 current_epoch_seconds=$(date +%s)
 
 PRTOKEN_TMP=/tmp/prtoken_temp

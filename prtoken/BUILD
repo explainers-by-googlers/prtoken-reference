@@ -142,3 +142,39 @@ cc_library(
         "@sqlite3",
     ],
 )
+
+cc_library(
+    name = "issuer_test_lib",
+    testonly = 1,
+    srcs = ["issuer_test_lib.cc"],
+    hdrs = ["issuer_test_lib.h"],
+    deps = [
+        ":issuer",
+        ":token",
+        ":token_proto",
+        ":verifier",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/strings:string_view",
+        "@private_join_and_compute//private_join_and_compute/util:status_includes",
+    ],
+)
+
+cc_test(
+    name = "storage_test",
+    srcs = ["storage_test.cc"],
+    deps = [
+        ":issuer_test_lib",
+        ":storage",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/time",
+        "@or-tools//ortools/base:path",
+        "@or-tools//ortools/base:status_matchers",
+    ],
+)

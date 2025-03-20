@@ -12,6 +12,7 @@ bazel_dep(name = "boringssl", version = "0.20240913.0")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "sqlite3", version = "3.49.1")
 bazel_dep(name = "or-tools", version = "9.12.0")
+bazel_dep(name = "googletest", version = "1.16.0")
 
 git_override(
     module_name = "private_join_and_compute",
