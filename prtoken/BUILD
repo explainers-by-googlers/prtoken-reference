@@ -137,7 +137,7 @@ cc_library(
         "@or-tools//ortools/base:file",
         "@private_join_and_compute//private_join_and_compute/crypto:bn_util",
         "@private_join_and_compute//private_join_and_compute/crypto:ec_util",
-	"@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto",
+        "@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto",
         "@private_join_and_compute//private_join_and_compute/util:status_includes",
         "@sqlite3",
     ],
