@@ -86,9 +86,9 @@ class TokensDB {
   sqlite3 *db_;
   std::string db_path_;
   std::string token_table_;
-  constexpr static char kBase64URIEncodedG[] =
-      "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFiv"
-      "OM1drMV7Oy7ZAaDe_UfU";
+  constexpr static char kBase64URIEncodedG[] =\
+    "A2sX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKW";
+
 };
 
 // Store containing multiple token databases.

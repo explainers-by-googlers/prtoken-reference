@@ -148,9 +148,9 @@ absl::StatusOr<proto::ElGamalKeyMaterial> GenerateElGamalKeypair() {
                    ECGroup::Create(kCurveId, context.get()));
   ASSIGN_OR_RETURN(const KeySet key_pair, GenerateKeyPair(ec_group));
   ASSIGN_OR_RETURN(const std::string g_bytes,
-                   key_pair.first->g.ToBytesUnCompressed());
+                   key_pair.first->g.ToBytesCompressed());
   ASSIGN_OR_RETURN(const std::string y_bytes,
-                   key_pair.first->y.ToBytesUnCompressed());
+                   key_pair.first->y.ToBytesCompressed());
   proto_key_pair.mutable_public_key()->mutable_g()->assign(g_bytes);
   proto_key_pair.mutable_public_key()->mutable_y()->assign(y_bytes);
   proto_key_pair.mutable_secret_key()->mutable_x()->assign(

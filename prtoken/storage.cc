@@ -41,13 +41,19 @@
 #include "ortools/base/filesystem.h"
 #include "ortools/base/helpers.h"
 #include "ortools/base/options.h"
+#include "private_join_and_compute/crypto/big_num.h"
+#include "private_join_and_compute/crypto/ec_group.h"
+#include "private_join_and_compute/crypto/ec_point.h"
 #include "private_join_and_compute/crypto/elgamal.pb.h"
 #include "private_join_and_compute/util/status_macros.h"
 #include "prtoken/token.h"
 #include "prtoken/verifier.h"
 #include "sqlite3.h"
 
+using private_join_and_compute::ECGroup;
+using private_join_and_compute::ECPoint;
 using private_join_and_compute::ElGamalCiphertext;
+using private_join_and_compute::ElGamalPublicKey;
 using prtoken::token_structure;
 
 using TokenBytes = std::array<uint8_t, token_structure.signal_size>;
@@ -182,8 +188,7 @@ absl::Status TokensDB::readTokenFromStatement(sqlite3_stmt *stmt,
   std::string u_unescaped;
   if (!absl::WebSafeBase64Unescape(
           std::string(reinterpret_cast<const char *>(u_str)), &u_unescaped)) {
-    return absl::UnavailableError(absl::StrCat(
-        "Failed to unescape u: ", sqlite3_errmsg(sqlite3_db_handle(stmt))));
+    return absl::UnavailableError("Failed to unescape u");
   }
   *ciphertext.mutable_u() = u_unescaped;
 
@@ -191,8 +196,7 @@ absl::Status TokensDB::readTokenFromStatement(sqlite3_stmt *stmt,
   std::string e_unescaped;
   if (!absl::WebSafeBase64Unescape(
           std::string(reinterpret_cast<const char *>(e_str)), &e_unescaped)) {
-    return absl::UnavailableError(absl::StrCat(
-        "Failed to unescape e: ", sqlite3_errmsg(sqlite3_db_handle(stmt))));
+    return absl::UnavailableError("Failed to unescape e");
   }
   *ciphertext.mutable_e() = e_unescaped;
 
@@ -200,18 +204,15 @@ absl::Status TokensDB::readTokenFromStatement(sqlite3_stmt *stmt,
 
   const unsigned char *y_str = sqlite3_column_text(stmt, 2);
   std::string y_unescaped;
-  LOG(INFO) << "Y escaped as read: \"" << y_str << "\"";
   if (!absl::WebSafeBase64Unescape(
           std::string(reinterpret_cast<const char *>(y_str)), &y_unescaped)) {
-    return absl::UnavailableError(absl::StrCat(
-        "Failed to unescape e: ", sqlite3_errmsg(sqlite3_db_handle(stmt))));
+    return absl::UnavailableError("Failed to unescape y");
   }
   std::string g_unescaped;
   if (!absl::WebSafeBase64Unescape(
           std::string(reinterpret_cast<const char *>(kBase64URIEncodedG)),
           &g_unescaped)) {
-    return absl::UnavailableError(absl::StrCat(
-        "Failed to unescape g: ", sqlite3_errmsg(sqlite3_db_handle(stmt))));
+    return absl::UnavailableError("Failed to unescape g");
   }
   public_key.mutable_g()->assign(g_unescaped);
   public_key.mutable_y()->assign(y_unescaped);
@@ -396,6 +397,9 @@ absl::Status WriteKeysToFile(const proto::ElGamalKeyMaterial &elgamal_keypair,
    *   hmac: <null | jwk>
    * }
    */
+  auto blinders_context_ = std::make_unique<Context>();
+  ASSIGN_OR_RETURN(ECGroup ec_group,
+                   ECGroup::Create(kCurveId, blinders_context_.get()));
   nlohmann::json j;
   // Epoch Metadata.
   std::string epoch_id_str =
@@ -415,12 +419,25 @@ absl::Status WriteKeysToFile(const proto::ElGamalKeyMaterial &elgamal_keypair,
   j["eg"] = nlohmann::json::object();
   j["eg"]["kty"] = "EC";
   j["eg"]["crv"] = "P-256";
-  std::string x_escaped, y_escaped, g_escaped, p_escaped;
-  absl::WebSafeBase64Escape(elgamal_keypair.secret_key().x(), &x_escaped);
-  absl::WebSafeBase64Escape(elgamal_keypair.public_key().y(), &y_escaped);
+  // Decompose the Y point into its affine coordinates by calling the
+  // EC point's GetAffineCoordinates function.
+  ASSIGN_OR_RETURN(private_join_and_compute::ECPoint point_public_key,
+                   ec_group.CreateECPoint(elgamal_keypair.public_key().y()));
+  BigNum::BignumPtr x_coord_ptr, y_coord_ptr;
+  ASSIGN_OR_RETURN(auto affine_coords, point_public_key.GetAffineCoordinates());
+  BigNum x_coord =
+      blinders_context_->CreateBigNum(std::move(affine_coords.first));
+  BigNum y_coord =
+      blinders_context_->CreateBigNum(std::move(affine_coords.second));
+  std::string x_coord_escaped, y_coord_escaped;
+  absl::WebSafeBase64Escape(x_coord.ToBytes(), &x_coord_escaped);
+  absl::WebSafeBase64Escape(y_coord.ToBytes(), &y_coord_escaped);
+  j["eg"]["x"] = x_coord_escaped;
+  j["eg"]["y"] = y_coord_escaped;
+  std::string d_escaped, g_escaped;
   absl::WebSafeBase64Escape(elgamal_keypair.public_key().g(), &g_escaped);
-  j["eg"]["x"] = x_escaped;
-  j["eg"]["y"] = y_escaped;
+  absl::WebSafeBase64Escape(elgamal_keypair.secret_key().x(), &d_escaped);
+  j["eg"]["d"] = d_escaped;
   j["eg"]["g"] = g_escaped;
   // HMAC key material.
   j["hmac"] = nlohmann::json::object();
@@ -439,6 +456,9 @@ absl::Status WriteKeysToFile(const proto::ElGamalKeyMaterial &elgamal_keypair,
 
 absl::StatusOr<EpochKeyMaterials> LoadKeysFromFile(
     const std::string &file_path) {
+  auto blinders_context_ = std::make_unique<Context>();
+  ASSIGN_OR_RETURN(ECGroup ec_group,
+                   ECGroup::Create(kCurveId, blinders_context_.get()));
   std::string json_str;
   CHECK_OK(file::GetContents(file_path, &json_str, file::Defaults()))
       << absl::StrCat("Failed to read file: ", file_path);
@@ -459,26 +479,41 @@ absl::StatusOr<EpochKeyMaterials> LoadKeysFromFile(
   if (!j.contains("eg")) {
     return absl::InternalError("JSON file does not contain eg");
   }
-  for (std::string key : {"y", "g"}) {
+  for (std::string key : {"x", "y", "g"}) {
     if (!j["eg"].contains(key)) {
       return absl::InternalError(
           absl::StrCat("JSON file does not contain eg.", key));
     }
   }
   // ElGamal key material.
-  proto::ElGamalKeyMaterial *eg = epoch_keys.mutable_eg();
-  if (j["eg"].contains("x")) {
-    std::string x_unescaped;
-    if (!absl::WebSafeBase64Unescape(std::string(j["eg"]["x"]), &x_unescaped)) {
-      return absl::InternalError("Failed to unescape eg.x");
+  proto::ElGamalKeyMaterial* eg = epoch_keys.mutable_eg();
+  if (j["eg"].contains("d")) {
+    std::string d_unescaped;
+    if (!absl::WebSafeBase64Unescape(std::string(j["eg"]["d"]), &d_unescaped)) {
+      return absl::InternalError("Failed to unescape eg.d");
     }
-    eg->mutable_secret_key()->mutable_x()->assign(x_unescaped);
+    eg->mutable_secret_key()->mutable_x()->assign(d_unescaped);
   }
-  std::string y_unescaped, g_unescaped;
-  if (!absl::WebSafeBase64Unescape(std::string(j["eg"]["y"]), &y_unescaped)) {
+  std::string public_key_unescaped;
+  std::string y_affine_bytes;
+  std::string x_affine_bytes;
+  if (!absl::WebSafeBase64Unescape(std::string(j["eg"]["y"]),
+                                   &y_affine_bytes)) {
     return absl::InternalError("Failed to unescape eg.y");
   }
-  eg->mutable_public_key()->set_y(y_unescaped);
+  if (!absl::WebSafeBase64Unescape(std::string(j["eg"]["x"]),
+                                   &x_affine_bytes)) {
+    return absl::InternalError("Failed to unescape eg.x");
+  }
+  ASSIGN_OR_RETURN(
+      ECPoint public_point,
+      ec_group.CreateECPoint(blinders_context_->CreateBigNum(x_affine_bytes),
+                             blinders_context_->CreateBigNum(y_affine_bytes)));
+  // In the public key representation, Y is the point composed of x and y
+  // affine coordinates.
+  ASSIGN_OR_RETURN(public_key_unescaped, public_point.ToBytesCompressed());
+  eg->mutable_public_key()->set_y(public_key_unescaped);
+  std::string g_unescaped;
   if (!absl::WebSafeBase64Unescape(std::string(j["eg"]["g"]), &g_unescaped)) {
     return absl::InternalError("Failed to unescape eg.g");
   }
