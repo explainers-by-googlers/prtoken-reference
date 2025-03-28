@@ -55,7 +55,7 @@ absl::Status TokensDBWithIPVerifier::CreateResultTable() {
   // Create a table for decryption results.
   std::cout << "table name:" << result_table_ << std::endl;
   std::string sql_create = absl::StrFormat(
-      "CREATE TABLE IF NOT EXISTS \"%s\" (e TEXT, ordinal INTEGER, m TEXT, "
+      "CREATE TABLE IF NOT EXISTS \"%s\" (e BLOB, ordinal INTEGER, m TEXT, "
       "error TEXT);",
       result_table_);
   // Execute the create table statement.
@@ -99,12 +99,8 @@ absl::Status TokensDBWithIPVerifier::OnFinishGetToken(
     return status;
   }
 
-  std::string e_escaped;
-  absl::WebSafeBase64Escape(token.eg_ciphertext().e(), &e_escaped);
-  // Restore the encrypted message to join with token table.
-  sqlite3_bind_text(stmt, 1, e_escaped.c_str(), e_escaped.size(),
-                    SQLITE_STATIC);
-
+  sqlite3_bind_blob(stmt, 1, token.eg_ciphertext().e().data(),
+                    token.eg_ciphertext().e().size(), SQLITE_STATIC);
   if (!verifier_ptr_->DecryptToken(token.eg_ciphertext(), decrypted_tokens,
                                    reports)) {
     errors_++;

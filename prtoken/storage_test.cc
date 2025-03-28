@@ -79,14 +79,14 @@ TEST_F(PRTokenTest, TokenFileRoundTrip) {
       file::JoinPath(output_dir, "TokenFileRoundTrip.sqlite3");
   const absl::Time expiration_time = absl::Now() + absl::Hours(24);
   std::vector<ElGamalCiphertext> original_tokens;
-  float p_reveal = 0.2;
-  ASSERT_THAT(issuer_->IssueTokens({1, 1, 1}, 20, 100, original_tokens),
-              absl_testing::IsOk());
+  const uint64_t num_tokens_with_signal = 20;
+  ASSERT_THAT(issuer_->IssueTokens({1, 1, 1}, num_tokens_with_signal, 100,
+                                   original_tokens), absl_testing::IsOk());
   {
     TokensDB tokens_db;
     EXPECT_OK(tokens_db.Open(output_file));
     EXPECT_OK(tokens_db.Insert(original_tokens, key_pair_.public_key(),
-                               p_reveal, expiration_time));
+                               num_tokens_with_signal, expiration_time));
     tokens_db.close();
   }
   TokensDB tokens_db;
@@ -101,7 +101,7 @@ TEST_F(PRTokenTest, TokenFileRoundTrip) {
   for (size_t i = 0; i < tokens.size(); ++i) {
     EXPECT_EQ(tokens[i].eg_ciphertext().u(), original_tokens[i].u());
     EXPECT_EQ(tokens[i].eg_ciphertext().e(), original_tokens[i].e());
-    EXPECT_EQ(tokens[i].p_reveal(), p_reveal);
+    EXPECT_EQ(tokens[i].num_tokens_with_signal(), num_tokens_with_signal);
     EXPECT_EQ(tokens[i].filename(), output_file);
     EXPECT_EQ(tokens[i].epoch_id(), EpochIDFromEndTime(expiration_time));
     EXPECT_EQ(tokens[i].public_key().y(), key_pair_.public_key().y());
@@ -122,12 +122,12 @@ TEST_F(PRTokenTest, TokenStoreMultipleDatabasesTest) {
     const absl::Time expiration_time =
         absl::Now() + absl::Hours(24 * (db_idx + 1));
     std::vector<ElGamalCiphertext> tokens;
-    float p_reveal = 0.2;
+    const uint64_t num_tokens_with_signal = 20;
     ASSERT_OK(issuer_->IssueTokens({1, 1, 1}, 2, 10, tokens));
     TokensDB tokens_db;
     EXPECT_OK(tokens_db.Open(output_file));
-    EXPECT_OK(tokens_db.Insert(tokens, key_pair_.public_key(), p_reveal,
-                               expiration_time));
+    EXPECT_OK(tokens_db.Insert(tokens, key_pair_.public_key(),
+                               num_tokens_with_signal, expiration_time));
     tokens_db.close();
   }
   const std::string output_file_pattern =

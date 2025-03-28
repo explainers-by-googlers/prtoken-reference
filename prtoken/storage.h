@@ -46,11 +46,10 @@ using prtoken::proto::ValidationToken;
 constexpr uint32_t kValidationBucketCount = 10000;
 
 // Validating aggregate properties of tokens makes most sense in the context
-// of the same p_reveal rate and epoch_id, which we refer to as a validation
-// bucket. We quantize p_reveal to increments of 0.0001, so the bucket is a pair
-// of (p_reveal * 10000, epoch_id).
+// of the same num_tokens_with_signal and epoch_id, which we refer to as a
+// validation bucket.
 using ValidationBucket =
-    std::pair<uint32_t /** p_reveal * 10000 */, uint64_t /** epoch_id */>;
+    std::pair<uint64_t /** num_tokens_with_signal */, uint64_t /** epoch_id */>;
 
 // Singular Token database file.
 class TokensDB {
@@ -61,7 +60,7 @@ class TokensDB {
   absl::Status Insert(
       absl::Span<const ElGamalCiphertext> tokens,
       const private_join_and_compute::ElGamalPublicKey &public_key,
-      float p_reveal, absl::Time expiration_time);
+      uint64_t num_tokens_with_signal, absl::Time expiration_time);
   absl::Status GetValidationBuckets(std::set<ValidationBucket> &buckets);
   // Process tokens found in rows matching the given public key.
   // It calls OnFinishGetToken() after each token is read.
@@ -127,7 +126,7 @@ absl::StatusOr<EpochKeyMaterials> LoadKeysFromFile(
 absl::Status WriteTokensToFile(
     const std::vector<ElGamalCiphertext> &tokens,
     const private_join_and_compute::ElGamalPublicKey &public_key,
-    float p_reveal, absl::Time expiration_time,
+    uint64_t num_tokens_with_signal, absl::Time expiration_time,
     absl::string_view output_file_name);
 
 std::string TokenToTLS(const private_join_and_compute::ElGamalCiphertext &token,

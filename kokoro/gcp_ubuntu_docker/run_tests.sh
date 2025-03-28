@@ -25,11 +25,11 @@ function install_bazelisk {
   esac
 
   mkdir -p "$HOME/bin"
-  wget --no-verbose -O "$HOME/bin/bazel" \
+  wget --no-verbose -O "$HOME/bin/bazelisk" \
       "https://github.com/bazelbuild/bazelisk/releases/download/$BAZELISK_VERSION/$name" \
       2> /dev/null
 
-  chmod u+x "$HOME/bin/bazel"
+  chmod u+x "$HOME/bin/bazelisk"
   if [[ ! ":$PATH:" =~ :"$HOME"/bin/?: ]]; then
     export PATH="$HOME/bin:$PATH"
   fi
@@ -40,10 +40,10 @@ install_bazelisk
 
 cd ${KOKORO_ARTIFACTS_DIR}/git/prtoken-reference
 
-bazel test prtoken:storage_test
-bazel test prtoken:command_test
-bazel test prtoken:issuance_verification_test
-bazel test --config=benchmark prtoken:issuance_verification_test \
+bazelisk test prtoken:storage_test
+bazelisk test prtoken:command_test
+bazelisk test prtoken:issuance_verification_test
+bazelisk test --config=benchmark prtoken:issuance_verification_test \
       --test_arg=--benchmark_filter=all
 
 current_epoch_seconds=$(date +%s)
@@ -54,20 +54,20 @@ EXPECTED_IP=1.2.3.4
 PRIVATE_KEY_FILE="test_key_${current_epoch_seconds}.json"
 RESULT_TABLE="results_${current_epoch_seconds}"
 
-bazel run //prtoken:prtoken issue -- \
+bazelisk run //prtoken:prtoken issue -- \
     --custom_db_filename=test.db \
     --custom_key_filename="${PRIVATE_KEY_FILE}" \
     --output_dir="${PRTOKEN_TMP}" \
     --num_tokens=10 \
     --ip="${EXPECTED_IP}"
 
-bazel run  //prtoken:prtoken verify -- \
+bazelisk run  //prtoken:prtoken verify -- \
     --token_db "${PRTOKEN_TMP}/test.db" \
     --private_key "${PRTOKEN_TMP}/${PRIVATE_KEY_FILE}" \
     --result_table "${RESULT_TABLE}"
 
 # Run the query to get the output
-query="select t.e, r.m, r.ordinal from tokens as t join ${RESULT_TABLE} as r where t.e = r.e"
+query="select t.e, r.m, r.ordinal from tokens as t join ${RESULT_TABLE} as r where hex(t.e) = hex(r.e)"
 output=$(sqlite3 "${PRTOKEN_TMP}/test.db" "${query}" 2>&1)
 
 # Check if the output contains the expected string

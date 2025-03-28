@@ -49,7 +49,7 @@ message ValidationToken {
   string filename = 1;
   private_join_and_compute.ElGamalCiphertext eg_ciphertext = 2;
   private_join_and_compute.ElGamalPublicKey public_key = 3;
-  float p_reveal = 4;
+  uint64 num_tokens_with_signal = 4;
   uint64 epoch_id = 5;
   PlaintextToken contents = 6;
 }

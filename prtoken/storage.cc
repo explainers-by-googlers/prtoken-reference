@@ -76,12 +76,12 @@ absl::Status TokensDB::Open(const std::string &db_path) {
   const char *sql_create = R"sql(
       CREATE TABLE IF NOT EXISTS tokens (
       version INTEGER,
-      u TEXT,
-      e TEXT,
-      expiration TEXT,
-      p_reveal INTEGER,
-      epoch_id TEXT,
-      y TEXT);
+      u BLOB,
+      e BLOB,
+      expiration INTEGER,
+      num_tokens_with_signal INTEGER,
+      epoch_id INTEGER,
+      public_key TEXT);
     )sql";
 
   // Execute the create table statement
@@ -100,7 +100,8 @@ absl::Status TokensDB::GetValidationBuckets(
   sqlite3_stmt *stmt;
   absl::Cleanup cleanup = [&stmt] { sqlite3_finalize(stmt); };
   std::string sql_select = absl::StrFormat(
-      "SELECT p_reveal, epoch_id FROM %s GROUP BY p_reveal, epoch_id;",
+      "SELECT num_tokens_with_signal, epoch_id FROM %s GROUP BY "\
+      "num_tokens_with_signal, epoch_id;",
       token_table_);
   if (sqlite3_prepare_v2(db_, sql_select.c_str(), -1, &stmt, nullptr) !=
       SQLITE_OK) {
@@ -109,7 +110,7 @@ absl::Status TokensDB::GetValidationBuckets(
   }
   // Now read the results.
   while (sqlite3_step(stmt) == SQLITE_ROW) {
-    uint32_t p_reveal_int = sqlite3_column_int(stmt, 0);
+    uint64_t num_tokens_with_signal = sqlite3_column_int(stmt, 0);
     // Read the epoch ID string from the database and convert it to an integer.
     const unsigned char *id_str = sqlite3_column_text(stmt, 1);
     std::string id_unescaped;
@@ -125,7 +126,7 @@ absl::Status TokensDB::GetValidationBuckets(
           "Failed to convert epoch_id string to integer: ", id_unescaped));
       return status;
     }
-    buckets.insert(std::make_pair(p_reveal_int, epoch_id));
+    buckets.insert(std::make_pair(num_tokens_with_signal, epoch_id));
   }
   return absl::OkStatus();
 }
@@ -133,15 +134,15 @@ absl::Status TokensDB::GetValidationBuckets(
 absl::Status TokensDB::Insert(
     absl::Span<const ElGamalCiphertext> tokens,
     const private_join_and_compute::ElGamalPublicKey &public_key,
-    float p_reveal, absl::Time expiration_time) {
+    uint64_t num_tokens_with_signal, absl::Time expiration_time) {
   // Compute an ISO8601 YYYYMMDDHHMMSS integer from the epoch end time.
-  std::string epoch_id_str = absl::FormatTime(
+  std::string expiration_time_str = absl::FormatTime(
       kEpochIDDateFormat, expiration_time, absl::UTCTimeZone());
-  LOG(INFO) << "Epoch ID (string): " << epoch_id_str;
+  LOG(INFO) << "Epoch ID (string): " << expiration_time_str;
   for (const ElGamalCiphertext &token : tokens) {
     sqlite3_stmt *stmt;
     const char *sql_insert = R"sql(
-        INSERT INTO tokens (u, e, expiration, p_reveal, y, epoch_id)
+        INSERT INTO tokens (u, e, expiration, num_tokens_with_signal, public_key, epoch_id)
         VALUES (?, ?, ?, ?, ?, ?);
     )sql";
     if (sqlite3_prepare_v2(db_, sql_insert, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -150,23 +151,26 @@ absl::Status TokensDB::Insert(
       sqlite3_finalize(stmt);
       return status;
     }
-    // Store the expiration time as a string in ISO 8601 UTC format.
-    std::string expiration_time_str = absl::FormatTime(
-        absl::RFC3339_sec, expiration_time, absl::UTCTimeZone());
-    std::string u_escaped, e_escaped, y_escaped, id_escaped;
-    absl::WebSafeBase64Escape(token.u(), &u_escaped);
-    sqlite3_bind_text(stmt, 1, u_escaped.c_str(), u_escaped.size(),
-                      SQLITE_STATIC);
-    absl::WebSafeBase64Escape(token.e(), &e_escaped);
-    sqlite3_bind_text(stmt, 2, e_escaped.c_str(), e_escaped.size(),
-                      SQLITE_STATIC);
+    // Store the expiration_time_str as a YYYYMMDDHHMMSS integer.
+    uint64_t expiration_time_int;
+    if (!absl::SimpleAtoi(expiration_time_str, &expiration_time_int)) {
+      absl::Status status = absl::InternalError(
+          absl::StrCat("Failed to convert expiration_time string to integer: ",
+                       expiration_time_str));
+      sqlite3_finalize(stmt);
+      return status;
+    }
+    std::string y_escaped, id_escaped;
     absl::WebSafeBase64Escape(public_key.y(), &y_escaped);
     sqlite3_bind_text(stmt, 5, y_escaped.c_str(), y_escaped.size(),
                       SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, expiration_time_str.c_str(),
-                      expiration_time_str.size(), SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 4, p_reveal * kValidationBucketCount);
-    absl::WebSafeBase64Escape(epoch_id_str, &id_escaped);
+    sqlite3_bind_int(stmt, 3, expiration_time_int);
+    sqlite3_bind_int(stmt, 4, num_tokens_with_signal);
+    sqlite3_bind_blob(stmt, 1, token.u().data(), token.u().size(),
+                      SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 2, token.e().data(), token.e().size(),
+                      SQLITE_STATIC);
+    absl::WebSafeBase64Escape(expiration_time_str, &id_escaped);
     sqlite3_bind_text(stmt, 6, id_escaped.c_str(), id_escaped.size(),
                       SQLITE_STATIC);
     if (sqlite3_step(stmt) != SQLITE_DONE) {
@@ -184,21 +188,13 @@ absl::Status TokensDB::Insert(
 absl::Status TokensDB::readTokenFromStatement(sqlite3_stmt *stmt,
                                               ValidationToken &token) {
   ElGamalCiphertext ciphertext;
-  const unsigned char *u_str = sqlite3_column_text(stmt, 0);
-  std::string u_unescaped;
-  if (!absl::WebSafeBase64Unescape(
-          std::string(reinterpret_cast<const char *>(u_str)), &u_unescaped)) {
-    return absl::UnavailableError("Failed to unescape u");
-  }
-  *ciphertext.mutable_u() = u_unescaped;
+  const char *u_str = reinterpret_cast<const char *>(
+      sqlite3_column_blob(stmt, 0));
+  ciphertext.mutable_u()->assign(u_str, sqlite3_column_bytes(stmt, 0));
 
-  const unsigned char *e_str = sqlite3_column_text(stmt, 1);
-  std::string e_unescaped;
-  if (!absl::WebSafeBase64Unescape(
-          std::string(reinterpret_cast<const char *>(e_str)), &e_unescaped)) {
-    return absl::UnavailableError("Failed to unescape e");
-  }
-  *ciphertext.mutable_e() = e_unescaped;
+  const char *e_str = reinterpret_cast<const char *>(
+      sqlite3_column_blob(stmt, 1));
+  ciphertext.mutable_e()->assign(e_str, sqlite3_column_bytes(stmt, 1));
 
   ElGamalPublicKey public_key;
 
@@ -206,7 +202,7 @@ absl::Status TokensDB::readTokenFromStatement(sqlite3_stmt *stmt,
   std::string y_unescaped;
   if (!absl::WebSafeBase64Unescape(
           std::string(reinterpret_cast<const char *>(y_str)), &y_unescaped)) {
-    return absl::UnavailableError("Failed to unescape y");
+    return absl::UnavailableError("Failed to unescape public_key");
   }
   std::string g_unescaped;
   if (!absl::WebSafeBase64Unescape(
@@ -227,7 +223,8 @@ absl::Status TokensDB::GetTokensForValidationBucket(
     const ValidationBucket &bucket, std::vector<ValidationToken> &tokens) {
   sqlite3_stmt *stmt;
   std::string sql_select = absl::StrFormat(
-      "SELECT u, e, y FROM %s WHERE p_reveal = ? AND epoch_id = ?;",
+      "SELECT u, e, public_key FROM %s WHERE num_tokens_with_signal = ? AND "
+      "epoch_id = ?;",
       token_table_);
   if (sqlite3_prepare_v2(db_, sql_select.c_str(), -1, &stmt, nullptr) !=
       SQLITE_OK) {
@@ -247,8 +244,7 @@ absl::Status TokensDB::GetTokensForValidationBucket(
     ValidationToken token;
     RETURN_IF_ERROR(readTokenFromStatement(stmt, token));
     token.set_epoch_id(bucket.second);
-    token.set_p_reveal(bucket.first /
-                       static_cast<float>(kValidationBucketCount));
+    token.set_num_tokens_with_signal(bucket.first);
     tokens.push_back(token);
   }
   sqlite3_finalize(stmt);
@@ -258,7 +254,8 @@ absl::Status TokensDB::GetTokensForValidationBucket(
 absl::Status TokensDB::ProcessTokens(const std::string &public_key) {
   sqlite3_stmt *stmt;
   std::string sql_select = absl::StrFormat(
-      "SELECT u, e, y FROM %s WHERE y = \"%s\"", token_table_, public_key);
+      "SELECT u, e, public_key FROM %s WHERE public_key = \"%s\"", token_table_,
+      public_key);
 
   if (sqlite3_prepare_v2(db_, sql_select.c_str(), -1, &stmt, nullptr) !=
       SQLITE_OK) {
@@ -537,12 +534,13 @@ absl::StatusOr<EpochKeyMaterials> LoadKeysFromFile(
 absl::Status WriteTokensToFile(
     const std::vector<ElGamalCiphertext> &tokens,
     const private_join_and_compute::ElGamalPublicKey &public_key,
-    float p_reveal, absl::Time expiration_time,
+    uint64_t num_tokens_with_signal, absl::Time expiration_time,
     absl::string_view output_file_name) {
   TokensDB tokens_db;
   RETURN_IF_ERROR(tokens_db.Open(std::string(output_file_name)));
   RETURN_IF_ERROR(
-      tokens_db.Insert(tokens, public_key, p_reveal, expiration_time));
+      tokens_db.Insert(tokens, public_key, num_tokens_with_signal,
+                       expiration_time));
   tokens_db.close();
   return absl::OkStatus();
 }
