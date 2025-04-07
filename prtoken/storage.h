@@ -32,6 +32,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "include/nlohmann/json_fwd.hpp"
 #include "ortools/base/types.h"
 #include "private_join_and_compute/crypto/elgamal.pb.h"
 #include "prtoken/token.pb.h"
@@ -112,6 +113,11 @@ class EpochKeyMaterialStore {
  private:
   std::map<uint64_t, EpochKeyMaterials> epoch_keys_;
 };
+
+absl::StatusOr<nlohmann::json> EpochKeysToJson(
+    const proto::ElGamalKeyMaterial& elgamal_keypair,
+    absl::string_view secret_key_hmac, uint64_t epoch_id,
+    absl::Time epoch_start, absl::Time epoch_end);
 
 // Helper function to write a JSON file containing the given key material.
 absl::Status WriteKeysToFile(const proto::ElGamalKeyMaterial &elgamal_keypair,
