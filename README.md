@@ -23,33 +23,44 @@ reference implementation.
 
 ## How to run
 
-Issue tokens for IP:
+Export `PRT_OUTPUT_DIR` to an existing directory, or manually edit the paths in the commands below:
+```
+export PRT_OUTPUT_DIR=/tmp
+```
+### Issue tokens for IP
 
 ```
-bazel run //prtoken:prtoken issue -- \
+bazelisk run //prtoken:prtoken issue -- \
     --custom_db_filename=test.db \
     --custom_key_filename=test_key.json \
-    --output_dir=${SOME_PATH} \
+    --output_dir=${PRT_OUTPUT_DIR} \
     --num_tokens=10 \
     --ip=1.2.3.4
 ```
 
-Verify tokens:
+### Verify tokens
 
 ```
-bazel run //prtoken:prtoken verify -- \
-    --token_db "${SOME_PATH}/test.db" \
-    --private_key "${SOME_PATH}/test_key.json" \
+bazelisk run //prtoken:prtoken verify -- \
+    --token_db "${PRT_OUTPUT_DIR}/test.db" \
+    --private_key "${PRT_OUTPUT_DIR}/test_key.json" \
     --result_table RESULTS
 ```
 
 The above command will create a new table `RESULTS` in the same db file to
-store the decryptions. Try below to query the results.
+store the decryptions.
+
+### Query the results
+
+Use the sqlite command to open the 'test.db' database file within the `PRT_OUTPUT_DIR` directory.
+```
+sqlite3 test.db
+```
 
 ```sql
 SELECT t.e, r.m, r.ordinal
 FROM tokens AS t JOIN RESULTS AS r WHERE
-t.e = r.e
+t.e = r.e;
 ```
 
 In the column `r.m`, there should be one row showing the decrypted IP,
