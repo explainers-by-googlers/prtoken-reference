@@ -99,3 +99,137 @@ grpc_proto_library(
     srcs = ["token.proto"],
     deps = ["@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto"],
 )
+
+# Command tool to issue and verify probabilistic reveal tokens for IP address.
+cc_library(
+    name = "command",
+    srcs = ["command.cc"],
+    hdrs = ["command.h"],
+    deps = [
+        ":token",
+        ":token_proto",
+        ":storage",
+        ":verifier",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/time",
+    ],
+)
+
+cc_library(
+    name = "storage",
+    srcs = ["storage.cc"],
+    hdrs = ["storage.h"],
+    deps = [
+        ":token",
+        ":token_proto",
+        ":verifier",
+        "@abseil-cpp//absl/cleanup",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/time",
+        "@abseil-cpp//absl/types:span",
+        "@nlohmann_json//:json",
+        "@or-tools//ortools/base:file",
+        "@private_join_and_compute//private_join_and_compute/crypto:bn_util",
+        "@private_join_and_compute//private_join_and_compute/crypto:ec_util",
+        "@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto",
+        "@private_join_and_compute//private_join_and_compute/util:status_includes",
+        "@sqlite3",
+    ],
+)
+
+cc_binary(
+    name = "prtoken",
+    srcs = ["main.cc"],
+    deps = [
+        ":issuer",
+        ":command",
+        ":verifier",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@or-tools//ortools/base:path",
+    ],
+)
+
+cc_library(
+    name = "issuer_test_lib",
+    testonly = 1,
+    srcs = ["issuer_test_lib.cc"],
+    hdrs = ["issuer_test_lib.h"],
+    deps = [
+        ":issuer",
+        ":token",
+        ":token_proto",
+        ":verifier",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "command_test",
+    srcs = ["command_test.cc"],
+    deps = [
+        ":issuer_test_lib",
+        ":storage",
+        ":command",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/time",
+        "@or-tools//ortools/base:path",
+        "@or-tools//ortools/base:status_matchers",
+    ],
+)
+
+cc_test(
+    name = "storage_test",
+    srcs = ["storage_test.cc"],
+    deps = [
+        ":issuer_test_lib",
+        ":storage",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/time",
+        "@or-tools//ortools/base:path",
+        "@or-tools//ortools/base:status_matchers",
+    ],
+)
+
+cc_test(
+    name = "issuance_verification_test",
+    srcs = ["issuance_verification_test.cc"],
+    deps = [
+        ":client",
+        ":issuer",
+        ":issuer_test_lib",
+        ":token",
+        ":token_proto",
+        ":verifier",
+        ":command",
+        "@or-tools//ortools/base:path",
+        "@or-tools//ortools/base:status_matchers",
+        "@google_benchmark//:benchmark",
+        "@googletest//:gtest_main",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings:string_view",
+        "@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto",
+    ],
+)

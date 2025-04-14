@@ -27,16 +27,16 @@
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "private_join_and_compute/crypto/big_num.h"
 #include "private_join_and_compute/crypto/context.h"
 #include "private_join_and_compute/crypto/elgamal.h"
 #include "private_join_and_compute/crypto/elgamal.pb.h"
 #include "prtoken/token.h"
 #include "prtoken/token.pb.h"
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "absl/strings/string_view.h"
-#include "absl/types/span.h"
 
 namespace prtoken {
 
@@ -52,8 +52,8 @@ using ::private_join_and_compute::Context;
 using ::private_join_and_compute::ElGamalPublicKey;
 using ::private_join_and_compute::ElGamalSecretKey;
 
-using VerificationReport = std::vector<std::pair<size_t /** index */,
-                                                  VerificationError>>;
+using VerificationReport =
+    std::vector<std::pair<size_t /** index */, VerificationError>>;
 
 // Decrypts a probabilistic reveal token into a plaintext message.
 // Creates and holds its own context and ECGroup, which are NOT thread-safe.
@@ -61,9 +61,10 @@ using VerificationReport = std::vector<std::pair<size_t /** index */,
 class Decrypter {
  public:
   Decrypter() = default;
-  void Init(const private_join_and_compute::ElGamalSecretKey& elgamal_secret_key);
+  void Init(
+      const private_join_and_compute::ElGamalSecretKey &elgamal_secret_key);
   absl::StatusOr<std::string> Decrypt(
-      const private_join_and_compute::ElGamalCiphertext& token) const;
+      const private_join_and_compute::ElGamalCiphertext &token) const;
 
  private:
   std::unique_ptr<private_join_and_compute::Context> blinders_context_;
@@ -74,19 +75,23 @@ class Decrypter {
 class Verifier {
  public:
   static absl::StatusOr<std::unique_ptr<Verifier>> Create(
-      const private_join_and_compute::ElGamalSecretKey& elgamal_secret_key,
+      const private_join_and_compute::ElGamalSecretKey &elgamal_secret_key,
       absl::string_view hmac_secret);
 
-absl::Status DecryptTokens(
-    absl::Span<const private_join_and_compute::ElGamalCiphertext> tokens,
-    std::vector<proto::PlaintextToken>& messages,
-    std::vector<proto::VerificationErrorReport>& reports);
+  absl::Status DecryptTokens(
+      absl::Span<const private_join_and_compute::ElGamalCiphertext> tokens,
+      std::vector<proto::PlaintextToken> &messages,
+      std::vector<proto::VerificationErrorReport> &reports);
+  // Returns true if successfully decrypted a token.
+  bool DecryptToken(const private_join_and_compute::ElGamalCiphertext &token,
+                    std::vector<proto::PlaintextToken> &messages,
+                    std::vector<proto::VerificationErrorReport> &reports);
 
   std::map<uint8_t, size_t> GetOrdinalHistogram(
-      const std::vector<proto::PlaintextToken>& tokens);
+      const std::vector<proto::PlaintextToken> &tokens);
 
   absl::Status VerifyEquivalentOrdinalCounts(
-      const std::vector<proto::PlaintextToken>& tokens);
+      const std::vector<proto::PlaintextToken> &tokens);
 
   absl::Status VerifyRevealRate(absl::Span<const proto::PlaintextToken> tokens,
                                 float p_reveal);

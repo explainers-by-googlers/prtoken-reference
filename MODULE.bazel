@@ -3,14 +3,26 @@ module(
     version = "0.0.1",
 )
 
+bazel_dep(name = "rules_cc", version = "0.1.1")
 bazel_dep(name = "private_join_and_compute", version = "0.0.1")
 bazel_dep(name = "nlohmann_json", version = "3.11.3.bcr.1")
 bazel_dep(name = "grpc", version = "1.66.0.bcr.2", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "abseil-cpp", version = "20240722.0")
 bazel_dep(name = "boringssl", version = "0.20240913.0")
+bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "sqlite3", version = "3.49.1")
+bazel_dep(name = "or-tools", version = "9.12.0")
+bazel_dep(name = "googletest", version = "1.16.0")
+bazel_dep(name = "google_benchmark", version = "1.9.1")
 
 git_override(
     module_name = "private_join_and_compute",
     commit = "a00b422418594bc8035458cd49b8bc9e0d77784c",
     remote = "https://github.com/google/private-join-and-compute",
+)
+
+git_override(
+    module_name = "or-tools",
+    commit = "b8e881fbde473a9e33e0dac475e498559eb0459d",  # 9.12.0
+    remote = "https://github.com/google/or-tools",
 )
