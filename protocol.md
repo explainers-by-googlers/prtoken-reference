@@ -307,11 +307,11 @@ of the browser, see Epochs and Sequencing above.*
 
 ### Token Validation: Key formats and secret sharing
 
-At the end of the epoch, the issuer will publish (`pk_e`, `sk_e`, `S_e`) as
-JSON web keys (JWKs). The ElGamal key will be stored as `eg` with `x` and `y`
-holding the public key (`pk_e`) and `d` the secret key (`sk_e`). The HMAC secret
-`Se` is stored as `hm`. All values converted to big-endian byte-arrays that are
-then base64url-encoded into strings. Timestamps are ISO 8601 timestamps UTC.
+At the end of the epoch, the issuer will publish (`pk_e`, `sk_e`, `S_e`) as JSON
+web keys (JWKs). The ElGamal key will be stored as `eg` with `x` and `y` holding
+the public key (`pk_e`) and `d` the secret key (`sk_e`). The HMAC secret `Se` is
+stored as `hmac.k`. All values converted to big-endian byte-arrays that are then
+base64url-encoded into strings. Timestamps are ISO 8601 timestamps UTC.
 
 <table>
     <tr>
@@ -400,7 +400,7 @@ per-token validation results with the following schema:
 </table>
 
 The script decrypts `T` and recovers `Version`, signal (which may be `NULL` or
-the actual signal), `H_idx`, and `t_ord`. The script computes `HMAC-SHA-256(S_e,
+the actual signal), `H_idx`, and `t_ord`. The script computes `HMAC-SHA256(S_e,
 Version || t_ord || signal)`, and sets the `validation_failed_ts` field for the
 row to the current time if this value does not match `H_idx`. The script also
 sets `has_signal` to `true` if the token specified the signal, and `false` if it
@@ -427,9 +427,9 @@ to decrypt tokens that were shared with `pk_e`. The website discards the final
 padding bytes that were added by the issuer, leaving the pre-encryption message.
 The website can now verify the following:
 
-1.  For each token, the first eight bytes of `HMAC-SHA-256(S_e, Version ||
-    t_ord || signal) == H_idx`. This proves that the browser did not generate
-    their own tokens.
+1.  For each token, the first eight bytes of `HMAC-SHA256(S_e, Version || t_ord
+    || signal) == H_idx`. This proves that the browser did not generate their
+    own tokens.
 1.  The distribution of `t_ord` over a given entity (e.g., top-level domain
     name) should be uniformly distributed, without outlier spikes. This gives
     confidence that a browser did not send the same token many times over.
