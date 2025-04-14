@@ -37,7 +37,7 @@ bazel run //prtoken:prtoken issue -- \
 Verify tokens:
 
 ```
-bazel run  //prtoken:prtoken verify -- \
+bazel run //prtoken:prtoken verify -- \
     --token_db "${SOME_PATH}/test.db" \
     --private_key "${SOME_PATH}/test_key.json" \
     --result_table RESULTS
