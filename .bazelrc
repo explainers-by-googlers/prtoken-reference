@@ -1,5 +1,0 @@
-build:benchmark --define=benchmark=true
-build:benchmark --copt=-O3
-build:benchmark --copt=-DNDEBUG
-build:benchmark --copt=-march=native
-build:benchmark --linkopt=-s
