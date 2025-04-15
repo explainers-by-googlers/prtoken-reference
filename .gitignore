@@ -1,0 +1,7 @@
+MODULE.bazel.lock
+bazel-bin
+bazel-out
+bazel-prtoken-reference
+bazel-testlogs
+
+.vscode
