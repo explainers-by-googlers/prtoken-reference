@@ -48,7 +48,7 @@ bazelisk run //prtoken:prtoken verify -- \
 ```
 
 The above command will create a new table `RESULTS` in the same db file to
-store the decryptions.
+store the decrypted tokens.
 
 ### Query the results
 
