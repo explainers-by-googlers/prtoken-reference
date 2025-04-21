@@ -128,6 +128,9 @@ absl::Status WriteKeysToFile(const proto::ElGamalKeyMaterial &elgamal_keypair,
 absl::StatusOr<EpochKeyMaterials> LoadKeysFromFile(
     const std::string &file_path);
 
+absl::StatusOr<EpochKeyMaterials> LoadKeysFromJson(
+    const std::string &json_string);
+
 // Helper function to write a sqlite3 file containing the given tokens.
 absl::Status WriteTokensToFile(
     const std::vector<ElGamalCiphertext> &tokens,

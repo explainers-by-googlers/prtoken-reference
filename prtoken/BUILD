@@ -143,12 +143,33 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "token_header",
+    srcs = ["token_header.cc"],
+    hdrs = ["token_header.h"],
+    deps = [
+        ":issuer",
+        ":command",
+        ":verifier",
+        ":storage",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@curl",
+        "@private_join_and_compute//private_join_and_compute/crypto:bn_util",
+        "@private_join_and_compute//private_join_and_compute/crypto:ec_util",
+        "@private_join_and_compute//private_join_and_compute/crypto:elgamal_proto",
+        "@private_join_and_compute//private_join_and_compute/util:status_includes",
+    ],
+)
+
 cc_binary(
     name = "prtoken",
     srcs = ["main.cc"],
     deps = [
         ":issuer",
         ":command",
+        ":token_header",
         ":verifier",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",

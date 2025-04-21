@@ -65,3 +65,21 @@ t.e = r.e;
 
 In the column `r.m`, there should be one row showing the decrypted IP,
 `::ffff:1.2.3.4` which is padded IPv4-mapped address.
+
+### Get Epoch ID from PRT header
+
+```
+bazelisk run //prtoken:prtoken epoch -- \
+    --prt={prt_header_value}
+```
+The above will print the epoch ID of the given token to std out.
+
+### Decrypt PRT header
+
+```
+bazelisk run //prtoken:prtoken decrypt -- \
+    --prt={prt_header_value}
+```
+The above will print the contents of the decrypted PRT to std out. This includes the epoch ID, the token version, the token ordinal, the IP (either empty or populated), and whether the token HMAC value was valid.
+
+Decryption will fail if the keys for the associated epoch have not yet been published.

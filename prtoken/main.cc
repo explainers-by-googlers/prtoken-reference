@@ -51,6 +51,7 @@
 #include "ortools/base/path.h"
 #include "prtoken/command.h"
 #include "prtoken/issuer.h"
+#include "prtoken/token_header.h"
 #include "prtoken/verifier.h"
 
 // For token issuance.
@@ -74,6 +75,9 @@ ABSL_FLAG(std::string, table_name, "tokens",
 ABSL_FLAG(std::string, result_table, "",
           "The table name to store the decryptions. If empty, default is "
           "results_[epoch_second].");
+
+// For token header validation.
+ABSL_FLAG(std::string, prt, "", "The PRT header to decrypt and validate");
 
 namespace {
 
@@ -207,6 +211,24 @@ absl::Status DecryptTokens() {
   }
   return status;
 }
+
+absl::Status GetEpochIdFromTokenHeader() {
+  std::string prt_header = absl::GetFlag(FLAGS_prt);
+  if (prt_header.empty()) {
+    return absl::InvalidArgumentError("--prt is required");
+  }
+
+  return prtoken::GetEpochIdFromTokenHeader(prt_header);
+}
+
+absl::Status DecryptTokenHeader() {
+  std::string prt_header = absl::GetFlag(FLAGS_prt);
+  if (prt_header.empty()) {
+    return absl::InvalidArgumentError("--prt is required");
+  }
+
+  return prtoken::DecryptTokenHeader(prt_header);
+}
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -225,6 +247,10 @@ int main(int argc, char **argv) {
     status = GenerateAndStoreTokens();
   } else if (command == "verify") {
     status = DecryptTokens();
+  } else if (command == "epoch") {
+    status = GetEpochIdFromTokenHeader();
+  } else if (command == "decrypt") {
+    status = DecryptTokenHeader();
   } else {
     status =
         absl::InvalidArgumentError("Wrong command-line argument: " + command);

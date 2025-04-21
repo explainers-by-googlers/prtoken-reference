@@ -471,13 +471,19 @@ absl::Status WriteKeysToFile(const proto::ElGamalKeyMaterial &elgamal_keypair,
 
 absl::StatusOr<EpochKeyMaterials> LoadKeysFromFile(
     const std::string &file_path) {
-  auto blinders_context_ = std::make_unique<Context>();
-  ASSIGN_OR_RETURN(ECGroup ec_group,
-                   ECGroup::Create(kCurveId, blinders_context_.get()));
   std::string json_str;
   CHECK_OK(file::GetContents(file_path, &json_str, file::Defaults()))
       << absl::StrCat("Failed to read file: ", file_path);
-  nlohmann::json j = nlohmann::json::parse(json_str);
+  return LoadKeysFromJson(json_str);
+}
+
+absl::StatusOr<EpochKeyMaterials> LoadKeysFromJson(
+    const std::string &json_string) {
+  auto blinders_context_ = std::make_unique<Context>();
+  ASSIGN_OR_RETURN(ECGroup ec_group,
+                   ECGroup::Create(kCurveId, blinders_context_.get()));
+
+  nlohmann::json j = nlohmann::json::parse(json_string);
   if (j.is_discarded()) {
     return absl::InternalError("Failed to parse JSON file");
   }
