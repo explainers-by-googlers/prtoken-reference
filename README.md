@@ -66,6 +66,14 @@ t.e = r.e;
 In the column `r.m`, there should be one row showing the decrypted IP,
 `::ffff:1.2.3.4` which is padded IPv4-mapped address.
 
+## PRT Headers
+
+A PRT header is the value that Chrome attaches to the
+`Sec-Probabilistic-Reveal-Token` request header for proxied requests. It is a
+base64 encoded string that includes the encrypted token data, the token version,
+and the epoch ID. Below are a few tools for extracting the data contained in a
+PRT header.
+
 ### Get Epoch ID from PRT header
 
 ```
@@ -80,6 +88,27 @@ The above will print the epoch ID of the given token to std out.
 bazelisk run //prtoken:prtoken decrypt -- \
     --prt={prt_header_value}
 ```
-The above will print the contents of the decrypted PRT to std out. This includes the epoch ID, the token version, the token ordinal, the IP (either empty or populated), and whether the token HMAC value was valid.
+The above will print the contents of the decrypted PRT to std out. This includes
+the epoch ID, the token version, the token ordinal, the IP (either empty or
+populated), and whether the token HMAC value was valid.
 
-Decryption will fail if the keys for the associated epoch have not yet been published.
+Decryption will fail if the keys for the associated epoch have not yet been
+published.
+
+Alternatively, you can decrypt multiple PRTs at once by putting them in a file
+(one PRT value per line) and using the following:
+
+```
+bazelisk run //prtoken:prtoken decrypt -- \
+    --prt_filename={prt_file.txt}
+```
+By default, the above will print the results of decrypting each PRT to std out
+in CSV format. You can provide an optional `--output_filename` flag to write the
+results to a file instead.
+
+The schema of the output CSV is as follows:\
+`PRT, Epoch ID, Version, Ordinal, IP, HMAC Valid, Error`
+
+Here `PRT` is the original encrypted token value from the input file and `Error`
+will be populated with a message if decryption fails for a particular token (for
+example if the keys for that token have not been published).

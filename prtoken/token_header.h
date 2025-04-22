@@ -17,6 +17,7 @@
 #ifndef PRTOKEN_TOKEN_HEADER_H_
 #define PRTOKEN_TOKEN_HEADER_H_
 
+#include <optional>
 #include <string>
 
 #include "absl/status/status.h"
@@ -32,6 +33,12 @@ absl::Status GetEpochIdFromTokenHeader(const std::string &prt_header);
 // for decryption. This will fail if the keys have not yet been published for
 // the associated epoch.
 absl::Status DecryptTokenHeader(const std::string &prt_header);
+
+// Decrypts each token header in the given input file and writes the decrypted
+// contents to the given output file, or stdout if output_file is not provided.
+// This assumes that the input file contains one token header per line.
+absl::Status DecryptTokenHeaderFile(const std::string &prt_file,
+                                    std::optional<std::string> output_file);
 
 }  // namespace prtoken
 
