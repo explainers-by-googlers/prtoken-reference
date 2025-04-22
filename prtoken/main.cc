@@ -78,6 +78,11 @@ ABSL_FLAG(std::string, result_table, "",
 
 // For token header validation.
 ABSL_FLAG(std::string, prt, "", "The PRT header to decrypt and validate");
+ABSL_FLAG(std::string, prt_filename, "",
+          "The file containing the PRT headers to decrypt and validate");
+ABSL_FLAG(
+    std::string, output_filename, "",
+    "Optional output file to write the results of decrypting multiple PRTs.");
 
 namespace {
 
@@ -223,11 +228,22 @@ absl::Status GetEpochIdFromTokenHeader() {
 
 absl::Status DecryptTokenHeader() {
   std::string prt_header = absl::GetFlag(FLAGS_prt);
-  if (prt_header.empty()) {
-    return absl::InvalidArgumentError("--prt is required");
+  std::string prt_file = absl::GetFlag(FLAGS_prt_filename);
+  std::string output_file = absl::GetFlag(FLAGS_output_filename);
+  if (prt_header.empty() && prt_file.empty()) {
+    return absl::InvalidArgumentError(
+        "One of --prt or --prt_filename is required");
   }
 
-  return prtoken::DecryptTokenHeader(prt_header);
+  if (!prt_header.empty()) {
+    return prtoken::DecryptTokenHeader(prt_header);
+  }
+  if (!std::filesystem::exists(prt_file)) {
+    return absl::InvalidArgumentError("prt file does not exist");
+  }
+  return prtoken::DecryptTokenHeaderFile(
+      prt_file,
+      output_file.empty() ? std::nullopt : std::make_optional(output_file));
 }
 }  // namespace
 
