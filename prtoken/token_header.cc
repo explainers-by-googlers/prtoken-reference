@@ -16,8 +16,6 @@
 
 #include "prtoken/token_header.h"
 
-#include <curl/curl.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -39,6 +37,8 @@
 #include "prtoken/issuer.h"
 #include "prtoken/storage.h"
 #include "prtoken/verifier.h"
+
+const std::string kPublishedKeysDir = "published_keys";
 
 namespace prtoken {
 
@@ -120,44 +120,27 @@ absl::StatusOr<ProbabilisticRevealToken> GetTokenFromHeaderString(
   return prt;
 }
 
-// A callback function for curl to write the response to a string.
-size_t CurlWriteCallback(char *contents, size_t size, size_t nmemb,
-                         std::string *response) {
-  size_t total_size = size * nmemb;
-  response->append(contents, total_size);
-  return total_size;
-}
-
-// Fetch the key file from the published_keys directory in github.
+// Read the key file from the published_keys directory.
 absl::StatusOr<std::string> GetKeyFileForEpoch(const std::string &epoch_id) {
-  CURL *curl;
-  CURLcode res;
-  std::string key_file_buffer;
-  std::string key_file_url = absl::StrCat(
-      "https://raw.githubusercontent.com/explainers-by-googlers/"
-      "prtoken-reference/refs/heads/main/published_keys/",
-      epoch_id, ".json");
-
-  curl = curl_easy_init();
-  if (curl) {
-    curl_easy_setopt(curl, CURLOPT_URL, key_file_url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CurlWriteCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &key_file_buffer);
-    curl_easy_setopt(curl, CURLOPT_FAILONERROR, true);
-    res = curl_easy_perform(curl);
-    if (res != CURLE_OK) {
-      return absl::InternalError(
-          absl::StrCat("Failed to fetch key file for epoch: ", epoch_id,
-                       ". Check "
-                       "https://github.com/explainers-by-googlers/"
-                       "prtoken-reference/blob/main/published_keys/epochs.csv "
-                       "too see if the epoch keys have been published."));
-    }
-    curl_easy_cleanup(curl);
-  } else {
-    return absl::InternalError("Failed to initialize curl.");
+  std::string private_key_file = epoch_id + ".json";
+  std::filesystem::path filePath(std::filesystem::current_path() /
+                                 kPublishedKeysDir / private_key_file);
+  if (!std::filesystem::exists(filePath)) {
+    return absl::InternalError(absl::StrCat(
+        "Failed to find the key file for epoch: ", private_key_file,
+        ". Try `git pull` and check published_keys/epochs.csv "
+        "to see if the epoch keys have been published."));
   }
-  return key_file_buffer;
+
+  std::ifstream fileStream(filePath);
+  if (!fileStream.is_open()) {
+    return absl::InternalError(absl::StrCat(
+        "Failed to open ", kPublishedKeysDir, "/", private_key_file));
+  }
+  std::stringstream key_file_buffer;
+  key_file_buffer << fileStream.rdbuf();
+  fileStream.close();
+  return key_file_buffer.str();
 }
 
 absl::StatusOr<std::unique_ptr<prtoken::Verifier>> BuildVerifierFromKeyFile(

@@ -19,9 +19,7 @@
 #include <stdlib.h>  // for getenv()
 
 #include <cstdint>
-#include <set>
 #include <string>
-#include <vector>
 
 #include "absl/log/log.h"
 #include "absl/strings/numbers.h"
