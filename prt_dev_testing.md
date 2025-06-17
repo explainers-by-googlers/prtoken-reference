@@ -267,6 +267,44 @@ The full list of PRT feature params and descriptions is
 [defined here](https://source.chromium.org/chromium/chromium/src/+/main:net/base/features.h;l=370?q=kEnableProbabilisticRevealTokens&ss=chromium%2Fchromium%2Fsrc)
 under the `kEnableProbabilisticRevealTokens` feature.
 
+For faster dev testing, override the ProbabilisticRevealTokenServerPath:
+
+```
+/opt/google/chrome/chrome --enable-features=" \
+    EnableIpPrivacyProxy, \
+    MaskedDomainList, \
+    EnableProbabilisticRevealTokens: \
+      ProbabilisticRevealTokensAddHeaderToProxiedRequests/true/ \
+      EnableProbabilisticRevealTokensForNonProxiedRequests/true/ \
+      UseCustomProbabilisticRevealTokenRegistry/true/ \
+      ProbabilisticRevealTokenServerPath/%2Fv1%2Ftestissueprts%2F/
+      CustomProbabilisticRevealTokenRegistry/ \
+      google%2Ecom%2Cyoutube%2Ecom" --store-probabilistic-reveal-tokens
+```
+
+The /v1/testissueprts endpoint uses a revealed set of keys to mint PRTs.
+This allows immediate token decryption for faster testing.
+
+The keys used are from /published_keys/5Y8CIWJwNmE.json:
+{
+    "eg": {
+        "crv": "P-256",
+        "d": "Pq4R2aXEDtAkY4VOLNCIxzI_XI7i8iAd-M_Xy-s20Hs",
+        "g": "A2sX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKW",
+        "kty": "EC",
+        "x": "PePsOzwzLYu0K_PCRalWuFbUm7pGbjWPVDngp8Dsuj4",
+        "y": "BiYMu6-ifC_w6egQEPEKALcu9Q4Q0Xw3LmMZxliNhl4"
+    },
+    "epoch_end_time": "2025-06-09T13:14:18+00:00",
+    "epoch_id": "5Y8CIWJwNmE",
+    "epoch_start_time": "2025-06-08T01:14:18+00:00",
+    "hmac": {
+        "alg": "HS256",
+        "k": "Xb5MHBvuLztWWsdrA8Q_uNJdVLFWmXX-QigIMQV_B9E",
+        "kty": "HMAC"
+    }
+}
+
 ### Storing PRTs to disk
 
 Additionally, there is a separate command-line flag that can be used to store
