@@ -1,0 +1,18 @@
+{
+    "eg": {
+        "crv": "P-256",
+        "d": "V2zT9ONZHXSInnPsQg9x_TCyyF3yLnmKtebdiCEsyA8",
+        "g": "A2sX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKW",
+        "kty": "EC",
+        "x": "l5lDZtb2FTVsEiJy3q3VeiTA3K5T9PADmoBTwz8VP0w",
+        "y": "nU6kA5XnZVXwC3hHshu-Gd4SiGcrAMq5hJZg-RUD0Ug"
+    },
+    "epoch_end_time": "2025-06-27T13:14:18+00:00",
+    "epoch_id": "azYu2W2UweY",
+    "epoch_start_time": "2025-06-26T01:14:18+00:00",
+    "hmac": {
+        "alg": "HS256",
+        "k": "nszleUC1wFvLqB6DUoVAaeQz4nryrgvUim7O4hgoHUw",
+        "kty": "HMAC"
+    }
+}
