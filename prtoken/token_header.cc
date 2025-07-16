@@ -225,9 +225,17 @@ absl::Status DecryptTokenHeaderFile(const std::string &prt_file,
   std::ifstream prt_file_stream(prt_file);
   std::string prt_header;
   std::vector<std::string> prt_headers;
+  int empty_line_cnt = 0;
   if (prt_file_stream.is_open()) {
     while (std::getline(prt_file_stream, prt_header)) {
+      if (prt_header.empty()) {
+        empty_line_cnt++;
+        continue;
+      }
       prt_headers.push_back(prt_header);
+    }
+    if (empty_line_cnt > 0) {
+      std::cout << "Skipped " << empty_line_cnt << " empty lines." << std::endl;
     }
     prt_file_stream.close();
   } else {
