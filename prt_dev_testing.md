@@ -186,9 +186,9 @@ https://raw.githubusercontent.com/explainers-by-googlers/prtoken-reference/refs/
 Example:
 
 ```
-bazelisk run //prtoken:prtoken epoch -- --prt=AQAhAmtRP5eyWEFc4VhhFpyNPKg7mL23+lnmQK3brI7rBu5S4+i/jhUfylTuxnjm+DfA==
+bazelisk run //prtoken:prtoken epoch -- --prt=AQAhAynlOiG0DOYkZlMuAexBokZwjaqXmYmC2BP4fI9vUHhFACEChAGuFovnbJL7rgEFC5sKt7OOWd2KvSi2qk79VdKtcG0F9BAgFHhO+A==
 
-==> epoch_id: pU7sZ45vg3w
+==> epoch_id: BfQQIBR4Tvg
 ```
 
 `decrypt` will attempt to fetch the keys for the relevant epoch and decrypt the
@@ -198,13 +198,13 @@ will fail. On success, this will output the decrypted token contents.
 Example:
 
 ```
-bazelisk run //prtoken:prtoken decrypt -- --prt=AQAhAmtRP5eyWEFc4VhhFpyNPKg7mL23+lnmQK3brI7rBu5S4+i/jhUfylTuxnjm+DfA==
+bazelisk run //prtoken:prtoken decrypt -- --prt=AQAhAynlOiG0DOYkZlMuAexBokZwjaqXmYmC2BP4fI9vUHhFACEChAGuFovnbJL7rgEFC5sKt7OOWd2KvSi2qk79VdKtcG0F9BAgFHhO+A==
 
 ==> PRT:
-==> epoch_id: pU7sZ45vg3w
+==> epoch_id: BfQQIBR4Tvg
 ==> version: 1
-==> ordinal: 6
-==> ip: fda3:e722:1ac3:db10:00ef:b596:ac12:39d9
+==> ordinal: 2
+==> ip: ::ffff:104.197.188.2
 ==> hmac_valid: true
 ```
 
